@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE configuration PUBLIC "-//mybatis.org//DTD Config 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-config.dtd">
+<configuration>
+
+	<properties resource="jdbc.properties" />
+
+	<settings>
+		<setting name="multipleResultSetsEnabled" value="true" />
+		<setting name="useColumnLabel" value="true" />
+		<setting name="autoMappingBehavior" value="PARTIAL" />
+		<setting name="defaultExecutorType" value="SIMPLE" />
+		<setting name="defaultStatementTimeout" value="25" />
+		<setting name="safeRowBoundsEnabled" value="false" />
+		<setting name="mapUnderscoreToCamelCase" value="false" />
+		<setting name="localCacheScope" value="SESSION" />
+		<setting name="jdbcTypeForNull" value="OTHER" />
+		<setting name="lazyLoadTriggerMethods" value="equals,clone,hashCode,toString" />
+	</settings>
+
+	<typeAliases>
+		<package name="cn.shiyanjun.platform.scheduled.dao.entities" />
+	</typeAliases>
+
+	<environments default="development">
+		<environment id="development">
+			<transactionManager type="JDBC" />
+			<dataSource type="POOLED">
+				<property name="driver" value="${dao.jdbc.driver}" />
+				<property name="url" value="${dao.jdbc.url}" />
+				<property name="username" value="${dao.jdbc.username}" />
+				<property name="password" value="${dao.jdbc.password}" />
+				<property name="poolMaximumActiveConnections" value="20" />
+				<property name="poolMaximumIdleConnections" value="10" />
+				<property name="poolMaximumCheckoutTime" value="20000" />
+				<property name="poolTimeToWait" value="20000" />
+				<property name="poolPingQuery" value="SELECT 'x'" />
+				<property name="poolPingEnabled" value="true" />
+				<property name="poolPingConnectionsNotUsedFor" value="60000" />
+			</dataSource>
+		</environment>
+	</environments>
+
+	<mappers>
+		<mapper resource="cn/shiyanjun/platform/scheduled/dao/mappers/JobMapper.xml" />
+		<mapper resource="cn/shiyanjun/platform/scheduled/dao/mappers/TaskMapper.xml" />
+	</mappers>
+
+
+</configuration>

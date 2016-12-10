@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="cn.shiyanjun.platform.scheduled.dao.mappers.JobMapper">
+
+	<resultMap type="Job" id="JobResultMap">
+		<id property="id" column="id" />
+		<result property="name" column="name" />
+		<result property="jobType" column="job_type" />
+		<result property="params" column="params" />
+		<result property="status" column="status" />
+		<result property="createTime" column="create_time" />
+		<result property="doneTime" column="done_time" />
+
+		<collection property="tasks" ofType="Task">
+			<id property="id" column="task_id" />
+			<result property="jobId" column="job_id" />
+			<result property="status" column="task_status" />
+			<result property="taskType" column="task_type" />
+			<result property="serialNo" column="task_serial_no" />
+			<result property="params" column="task_params" />
+			<result property="resultCount" column="task_result_count" />
+			<result property="startTime" column="task_start_time" />
+			<result property="doneTime" column="task_done_time" />
+		</collection>
+	</resultMap>
+
+	<update id="updateJobById" parameterType="Job">
+		UPDATE job
+		<set>
+			<if test="name != null">
+				name = #{name},
+			</if>
+			<if test="jobType != null">
+				job_type = #{jobType},
+			</if>
+			<if test="params != null">
+				params = #{params},
+			</if>
+			<if test="status != null">
+				status = #{status},
+			</if>
+			<if test="createTime != null">
+				create_time = #{createTime},
+			</if>
+			<if test="doneTime != null">
+				done_time = #{doneTime}
+			</if>
+		</set>
+		WHERE id = #{id}
+	</update>
+
+	<select id="getJobByState" resultMap="JobResultMap" parameterType="int">
+		SELECT * FROM job WHERE status = #{status} ORDER BY create_time ASC
+	</select>
+
+	<select id="getJobById" resultMap="JobResultMap" parameterType="int">
+		SELECT * FROM job WHERE id = #{id}
+	</select>
+
+
+</mapper>

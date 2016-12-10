@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="cn.shiyanjun.platform.scheduled.dao.mappers.TaskMapper">
+
+	<resultMap type="Task" id="taskResultMap">
+		<id property="id" column="id" />
+		<result property="jobId" column="job_id" />
+		<result property="status" column="status" />
+		<result property="taskType" column="task_type" />
+		<result property="serialNo" column="serial_no" />
+		<result property="params" column="params" />
+		<result property="resultCount" column="result_count" />
+		<result property="startTime" column="start_time" />
+		<result property="doneTime" column="done_time" />
+	</resultMap>
+
+	<insert id="insertTasks" useGeneratedKeys="true" keyProperty="id"
+		parameterType="java.util.List">
+		INSERT INTO
+		task(job_id,serial_no,task_type,params,status,result_count,start_time,done_time)
+		VALUES
+		<foreach collection="list" item="item" index="index"
+			separator=",">
+			(#{item.jobId},#{item.serialNo},#{item.taskType},#{item.params},#{item.status},#{item.resultCount},
+			#{item.startTime},#{item.doneTime})
+		</foreach>
+	</insert>
+
+	<update id="updateTaskById" parameterType="Task">
+		UPDATE task
+		<set>
+			<if test="jobId != null">
+				job_id = #{jobId},
+			</if>
+			<if test="status != null">
+				status = #{status},
+			</if>
+			<if test="serialNo != null">
+				serial_no = #{serialNo},
+			</if>
+			<if test="taskType != null">
+				task_type = #{taskType},
+			</if>
+			<if test="resultCount != null">
+				result_count = #{resultCount},
+			</if>
+			<if test="params != null">
+				params = #{params},
+			</if>
+			<if test="startTime != null">
+				start_time = #{startTime},
+			</if>
+			<if test="doneTime != null">
+				done_time = #{doneTime}
+			</if>
+		</set>
+		WHERE id = #{id}
+	</update>
+
+
+	<select id="retrieveTasks" parameterType="java.util.List"
+		resultMap="taskResultMap">
+		SELECT
+		id,job_id,status,serial_no,task_type,params,result_count,start_time,done_time
+		FROM task where task_type=#{taskType} and status=#{taskStatus} and
+		job_id in
+		(
+		SELECT job_id FROM
+		(
+		SELECT job_id,GROUP_CONCAT(STATUS) status
+		FROM task
+		WHERE job_id IN
+		<foreach item="jobIds" index="index" collection="jobIds" open="("
+			separator="," close=")">
+			#{jobIds}
+		</foreach>
+		GROUP BY job_id
+		) x
+		WHERE status NOT LIKE '%7%'
+		)
+		order by serialNo asc
+	</select>
+</mapper>
