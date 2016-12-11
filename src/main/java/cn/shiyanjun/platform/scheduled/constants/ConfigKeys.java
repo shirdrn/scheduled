@@ -16,5 +16,8 @@ public interface ConfigKeys {
 	String SCHEDULED_KEPT_TIMEOUT_JOB_MAX_COUNT = "scheduled.kept.timeout.job.max.count";
 	String SCHEDULED_RECOVERY_FEATURE_ENABLED = "scheduled.recovery.feature.enabled";
 	
-	String JOB_ORCHESTRATE_SERVICE = "job.orchestrate.service";
+	String SERVICE_JOB_ORCHESTRATE_PROTOCOL = "service.job.orchestrate.protocol";
+	String SERVICE_JOB_ORCHESTRATE_URL = "service.job.orchestrate.url";
+	
+	String SERVICE_JOB_FETCH_PROTOCOL = "service.job.fetch.protocol";
 }

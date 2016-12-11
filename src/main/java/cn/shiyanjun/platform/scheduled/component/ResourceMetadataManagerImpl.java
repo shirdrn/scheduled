@@ -16,10 +16,10 @@ import com.google.common.collect.Sets;
 
 import cn.shiyanjun.platform.api.Context;
 import cn.shiyanjun.platform.api.constants.TaskType;
-import cn.shiyanjun.platform.scheduled.common.ResourceMetadataManager;
+import cn.shiyanjun.platform.scheduled.common.ResourceManager;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 
-public class ResourceMetadataManagerImpl implements ResourceMetadataManager {
+public class ResourceMetadataManagerImpl implements ResourceManager {
 	
 	private static final Log LOG = LogFactory.getLog(ResourceMetadataManagerImpl.class);
 	private final Map<String, Map<TaskType, Integer>> maxConcurrencies = Maps.newHashMap();

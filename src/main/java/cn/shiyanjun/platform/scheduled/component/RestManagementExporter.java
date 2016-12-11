@@ -11,22 +11,22 @@ import com.google.common.collect.Sets;
 
 import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.scheduled.common.JobQueueingService;
-import cn.shiyanjun.platform.scheduled.common.ResourceManagementProtocol;
+import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
 import cn.shiyanjun.platform.scheduled.common.RestManageable;
 import cn.shiyanjun.platform.scheduled.component.DefaultQueueingManager.QueueingContext;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 
 public class RestManagementExporter implements RestManageable {
 
-	private final ResourceManagementProtocol protocol;
+	private final GlobalResourceManager manager;
 	
-	public RestManagementExporter(ResourceManagementProtocol protocol) {
+	public RestManagementExporter(GlobalResourceManager manager) {
 		super();
-		this.protocol = protocol;
+		this.manager = manager;
 	}
 	
 	private JobQueueingService getQueueingService(String queue) {
-		QueueingContext qc = protocol.getQueueingManager().getQueueingContext(queue);
+		QueueingContext qc = manager.getQueueingManager().getQueueingContext(queue);
 		JobQueueingService queueingService = qc.getJobQueueingService();
 		return queueingService;
 	}
@@ -68,7 +68,7 @@ public class RestManagementExporter implements RestManageable {
 	@Override
 	public Map<String, JSONObject> getQueueStatuses() {
 		Map<String, JSONObject> statuses = Maps.newHashMap();
-		Set<String> queues = protocol.getQueueingManager().queueNames();
+		Set<String> queues = manager.getQueueingManager().queueNames();
 		for(String queue : queues) {
 			Map<Integer, JSONObject> jobs = getQueuedJobStatuses(queue);
 			JSONObject status = new JSONObject();

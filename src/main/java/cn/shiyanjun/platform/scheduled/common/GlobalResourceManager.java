@@ -3,7 +3,7 @@ package cn.shiyanjun.platform.scheduled.common;
 import cn.shiyanjun.platform.api.Context;
 import redis.clients.jedis.JedisPool;
 
-public interface ResourceManagementProtocol {
+public interface GlobalResourceManager {
 
 	String getPlatformId();
 	
@@ -24,7 +24,7 @@ public interface ResourceManagementProtocol {
 
 	SchedulingStrategy getSchedulingStrategy();
 	
-	ResourceMetadataManager getResourceMetadataManager();
+	ResourceManager getResourceMetadataManager();
 
 	RestManageable getRestManageable();
 	

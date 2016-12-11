@@ -42,8 +42,8 @@ import cn.shiyanjun.platform.scheduled.common.JobPersistenceService;
 import cn.shiyanjun.platform.scheduled.common.JobQueueingService;
 import cn.shiyanjun.platform.scheduled.common.MQAccessService;
 import cn.shiyanjun.platform.scheduled.common.QueueingManager;
-import cn.shiyanjun.platform.scheduled.common.ResourceManagementProtocol;
-import cn.shiyanjun.platform.scheduled.common.ResourceMetadataManager;
+import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
+import cn.shiyanjun.platform.scheduled.common.ResourceManager;
 import cn.shiyanjun.platform.scheduled.common.ScheduledTask;
 import cn.shiyanjun.platform.scheduled.common.SchedulingManager;
 import cn.shiyanjun.platform.scheduled.common.SchedulingStrategy;
@@ -57,7 +57,7 @@ import cn.shiyanjun.platform.scheduled.dao.entities.Task;
 public class DefaultSchedulingManager extends AbstractComponent implements SchedulingManager {
 
 	private static final Log LOG = LogFactory.getLog(DefaultSchedulingManager.class);
-	protected final ResourceManagementProtocol protocol;
+	protected final GlobalResourceManager manager;
 	protected final QueueingManager queueingManager;
 	private ExecutorService executorService;
 	private ScheduledExecutorService scheduledExecutorService;
@@ -71,7 +71,7 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 	protected final ConcurrentMap<TaskID, TaskInfo> runningTaskIdToInfos = Maps.newConcurrentMap();
 	private final ConcurrentMap<Integer, JobInfo> completedJobIdToInfos = Maps.newConcurrentMap();
 	private final SchedulingStrategy schedulingStrategy;
-	private final ResourceMetadataManager resourceMetadataManager;
+	private final ResourceManager resourceMetadataManager;
 	private final FreshTasksResponseProcessingManager freshTasksResponseProcessingManager;
 	private final BlockingQueue<HeartbeatHolder> rawHeartbeatMessages = Queues.newLinkedBlockingQueue();
 	private final StaleTaskChecker staleTaskChecker;
@@ -81,16 +81,16 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 	private final TasksResponseHandler<JSONObject> tenuredInMQTasksResponseHandler = new TenuredInMQTaskResponseHandler();
 	private final HeartbeatHandlingController taskResponseHandlingController;
 
-	public DefaultSchedulingManager(ResourceManagementProtocol protocol) {
-		super(protocol.getContext());
-		this.protocol = protocol;
-		queueingManager = this.protocol.getQueueingManager();
-		taskPersistenceService = this.protocol.getTaskPersistenceService();
-		taskMQAccessService = this.protocol.getTaskMQAccessService();
-		heartbeatMQAccessService = this.protocol.getHeartbeatMQAccessService();
- 		schedulingStrategy = this.protocol.getSchedulingStrategy();
-		jobPersistenceService = protocol.getJobPersistenceService();
-		resourceMetadataManager = protocol.getResourceMetadataManager();
+	public DefaultSchedulingManager(GlobalResourceManager manager) {
+		super(manager.getContext());
+		this.manager = manager;
+		queueingManager = this.manager.getQueueingManager();
+		taskPersistenceService = this.manager.getTaskPersistenceService();
+		taskMQAccessService = this.manager.getTaskMQAccessService();
+		heartbeatMQAccessService = this.manager.getHeartbeatMQAccessService();
+ 		schedulingStrategy = this.manager.getSchedulingStrategy();
+		jobPersistenceService = manager.getJobPersistenceService();
+		resourceMetadataManager = manager.getResourceMetadataManager();
 		freshTasksResponseProcessingManager = new FreshTasksResponseProcessingManager();
 		staleTaskChecker = new StaleTaskChecker(this);
 		taskResponseHandlingController = new SimpleTaskResponseHandlingController(context);
@@ -255,7 +255,7 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 		@Override
 		public void recoverTasks() {
 			if(isRecoveryFeatureEnabled) {
-				Map<Integer, JSONObject> jobs = protocol.getRecoveryManager().getPendingTaskResponses();
+				Map<Integer, JSONObject> jobs = manager.getRecoveryManager().getPendingTaskResponses();
 				jobs.keySet().stream().forEach(jobId -> {
 					LOG.info("Start to recover task...");
 					JSONObject taskResponse = null;
@@ -269,7 +269,7 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 					LOG.info("Complete to recover tasks.");
 				});
 			} else {
-				Map<Integer, JSONObject> jobs = protocol.getRecoveryManager().getPendingTaskResponses();
+				Map<Integer, JSONObject> jobs = manager.getRecoveryManager().getPendingTaskResponses();
 				jobs.keySet().stream().forEach(jobId -> {
 					JSONObject taskResponse = null;
 					try {
@@ -355,9 +355,9 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 			// for this case, we shouldn't operate resource counter after parsing the tasks' results.
 			// here, we just check whether task response was an inflight result 
 			String platformId = tasksResponse.getString(ScheduledConstants.PLATFORM_ID);
-			LOG.debug("protocol.getPlatformId() = " + protocol.getPlatformId());
+			LOG.debug("protocol.getPlatformId() = " + manager.getPlatformId());
 			LOG.debug("tasksResponse.getPlatformId() = " + platformId);
-			return !protocol.getPlatformId().equals(platformId);
+			return !manager.getPlatformId().equals(platformId);
 		}
 		
 		private boolean isNeedRecoveryTasksResponse(JSONObject tasksResponse) {
@@ -504,7 +504,7 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 				// in memory
 				id = new TaskID(jobId, taskId, serialNo, taskType);
 				final TaskInfo taskInfo = new TaskInfo(id);
-				taskInfo.platformId = protocol.getPlatformId();
+				taskInfo.platformId = manager.getPlatformId();
 				taskInfo.scheduledTime = Time.now();
 				taskInfo.lastUpdatedTime = taskInfo.scheduledTime;
 				taskInfo.taskStatus = taskStatus;
@@ -528,7 +528,7 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 					jobInfo.inMemJobUpdateLock.lock();
 					
 					// publish to the MQ
-					JSONObject taskMessage = buildTaskMessage(protocol.getPlatformId(), scheduledTask.getTask(), taskCount);
+					JSONObject taskMessage = buildTaskMessage(manager.getPlatformId(), scheduledTask.getTask(), taskCount);
 					alreadyPublished = taskMQAccessService.produceMessage(taskMessage.toJSONString());
 					
 					jobStatus = JobStatus.RUNNING;

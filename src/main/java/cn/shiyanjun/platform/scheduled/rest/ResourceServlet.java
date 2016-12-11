@@ -11,14 +11,14 @@ import com.google.common.base.Strings;
 
 import cn.shiyanjun.platform.api.constants.JSONKeys;
 import cn.shiyanjun.platform.api.constants.TaskType;
-import cn.shiyanjun.platform.scheduled.common.ResourceManagementProtocol;
-import cn.shiyanjun.platform.scheduled.common.ResourceMetadataManager;
+import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
+import cn.shiyanjun.platform.scheduled.common.ResourceManager;
 
 public class ResourceServlet extends AbstractServlet {
 
 	private static final long serialVersionUID = 1L;
 
-	public ResourceServlet(ResourceManagementProtocol protocol) {
+	public ResourceServlet(GlobalResourceManager protocol) {
 		super(protocol);
 	}
 	
@@ -39,7 +39,7 @@ public class ResourceServlet extends AbstractServlet {
     		try {
 				TaskType type = TaskType.fromCode(Integer.parseInt(taskType)).get();
 				int intAmount = Integer.parseInt(amount);
-				final ResourceMetadataManager resourceMetadataManager = this.getResourceMetadataManager();
+				final ResourceManager resourceMetadataManager = this.getResourceMetadataManager();
 				resourceMetadataManager.updateResourceAmount(queue, type, intAmount);
 				result.put(JSONKeys.STATUS, 200);
 				result.put("message", "SUCCEEDED");

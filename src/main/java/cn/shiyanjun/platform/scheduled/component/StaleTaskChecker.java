@@ -41,9 +41,9 @@ class StaleTaskChecker implements Runnable {
 	
 	public StaleTaskChecker(final DefaultSchedulingManager schedulingManager) {
 		this.schedulingManager = schedulingManager;
-		keptTimeoutJobMaxCount = schedulingManager.protocol.getContext().getInt(ConfigKeys.SCHEDULED_KEPT_TIMEOUT_JOB_MAX_COUNT, 100);
+		keptTimeoutJobMaxCount = schedulingManager.manager.getContext().getInt(ConfigKeys.SCHEDULED_KEPT_TIMEOUT_JOB_MAX_COUNT, 100);
 		// default 2 hours
-		staleTaskMaxThresholdSecs = schedulingManager.protocol.getContext().getInt(ConfigKeys.SCHEDULED_STALE_TASK_MAX_THRESHOLD_SECS, 7200);
+		staleTaskMaxThresholdSecs = schedulingManager.manager.getContext().getInt(ConfigKeys.SCHEDULED_STALE_TASK_MAX_THRESHOLD_SECS, 7200);
 		staleTaskMaxThresholdMillis = staleTaskMaxThresholdSecs * 1000;
 	}
 	
@@ -132,7 +132,7 @@ class StaleTaskChecker implements Runnable {
 							schedulingManager.handleInMemoryCompletedTask(id);
 							
 							// release resources
-							if(schedulingManager.protocol.getPlatformId().equals(info.platformId)) {
+							if(schedulingManager.manager.getPlatformId().equals(info.platformId)) {
 								schedulingManager.releaseResource(queue, info.taskType);
 							}
 							schedulingManager.incrementTimeoutTaskCount(queue);

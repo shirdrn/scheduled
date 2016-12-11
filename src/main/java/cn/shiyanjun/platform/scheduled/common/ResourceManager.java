@@ -6,10 +6,7 @@ import java.util.Set;
 import cn.shiyanjun.platform.api.constants.TaskType;
 import cn.shiyanjun.platform.scheduled.component.ResourceMetadataManagerImpl.TaskStatCounter;
 
-/**
- * Created by luogang on 2016/7/26.
- */
-public interface ResourceMetadataManager {
+public interface ResourceManager {
 
 	void allocateResource(String queue, TaskType taskType);
 	void releaseResource(String queue, TaskType taskType);

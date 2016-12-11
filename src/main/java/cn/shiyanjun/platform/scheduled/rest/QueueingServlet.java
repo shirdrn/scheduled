@@ -14,14 +14,14 @@ import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Strings;
 
 import cn.shiyanjun.platform.scheduled.common.QueueingManager;
-import cn.shiyanjun.platform.scheduled.common.ResourceManagementProtocol;
+import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
 import cn.shiyanjun.platform.scheduled.common.RestManageable;
 
 public class QueueingServlet extends AbstractServlet {
 	
 	private static final long serialVersionUID = 1L;
 	
-	public QueueingServlet(ResourceManagementProtocol protocol) {
+	public QueueingServlet(GlobalResourceManager protocol) {
 		super(protocol);
 	}
 	

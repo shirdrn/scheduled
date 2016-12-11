@@ -22,12 +22,12 @@ public class RabbitMQProducerSimulator {
 		final MQAccessService taskMQAccessService = new RabbitMQAccessService(taskQName, connectionFactory);
 		taskMQAccessService.start();
 		
-		String platformId = "343e99d93bf440ed9bbddc491943d4e8";
-		int taskId = 7;
+		String platformId = "4e5cff3d8b9d4c2d89d8e9e64e78fdc3";
+		int taskId = 1;
 		int jobId = 1;
-		int serialNo = 7;
+		int serialNo = 1;
 		TaskStatus status = TaskStatus.SUCCEEDED;
-		int taskType = 2;
+		int taskType = 1;
 		
 		JSONObject message = new JSONObject(true);
 		JSONArray taskArray = new JSONArray();

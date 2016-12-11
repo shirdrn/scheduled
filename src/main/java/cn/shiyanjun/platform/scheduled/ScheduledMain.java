@@ -17,8 +17,8 @@ import cn.shiyanjun.platform.scheduled.common.JobPersistenceService;
 import cn.shiyanjun.platform.scheduled.common.MQAccessService;
 import cn.shiyanjun.platform.scheduled.common.QueueingManager;
 import cn.shiyanjun.platform.scheduled.common.RecoveryManager;
-import cn.shiyanjun.platform.scheduled.common.ResourceManagementProtocol;
-import cn.shiyanjun.platform.scheduled.common.ResourceMetadataManager;
+import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
+import cn.shiyanjun.platform.scheduled.common.ResourceManager;
 import cn.shiyanjun.platform.scheduled.common.RestManageable;
 import cn.shiyanjun.platform.scheduled.common.SchedulingManager;
 import cn.shiyanjun.platform.scheduled.common.SchedulingStrategy;
@@ -39,7 +39,7 @@ import cn.shiyanjun.platform.scheduled.utils.ConfigUtils;
 import cn.shiyanjun.platform.scheduled.utils.ResourceUtils;
 import redis.clients.jedis.JedisPool;
 
-public final class ScheduledMain extends AbstractComponent implements LifecycleAware, ResourceManagementProtocol {
+public final class ScheduledMain extends AbstractComponent implements LifecycleAware, GlobalResourceManager {
 
 	private static final Log LOG = LogFactory.getLog(ScheduledMain.class);
 	private final String queueingConfig = "queueings.properties";
@@ -55,7 +55,7 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	private MQAccessService taskMQAccessService;
 	private MQAccessService heartbeatMQAccessService;
 	private SchedulingStrategy schedulingStrategy;
-	private ResourceMetadataManager resourceMetadataManager;
+	private ResourceManager resourceMetadataManager;
 	private RestManageable restManageable;
 	
 	public ScheduledMain(final Context context) {
@@ -130,7 +130,7 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	}
 
 	@Override
-	public ResourceMetadataManager getResourceMetadataManager() {
+	public ResourceManager getResourceMetadataManager() {
 		return resourceMetadataManager;
 	}
 

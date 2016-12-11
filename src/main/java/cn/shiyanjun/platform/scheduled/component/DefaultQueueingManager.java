@@ -23,7 +23,7 @@ import cn.shiyanjun.platform.api.utils.Time;
 import cn.shiyanjun.platform.scheduled.common.JobPersistenceService;
 import cn.shiyanjun.platform.scheduled.common.JobQueueingService;
 import cn.shiyanjun.platform.scheduled.common.QueueingManager;
-import cn.shiyanjun.platform.scheduled.common.ResourceManagementProtocol;
+import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
 import cn.shiyanjun.platform.scheduled.common.TaskPersistenceService;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 import cn.shiyanjun.platform.scheduled.dao.entities.Job;
@@ -32,7 +32,7 @@ import cn.shiyanjun.platform.scheduled.dao.entities.Task;
 public class DefaultQueueingManager extends AbstractComponent implements QueueingManager {
 
 	private static final Log LOG = LogFactory.getLog(DefaultQueueingManager.class);
-	private final ResourceManagementProtocol protocol;
+	private final GlobalResourceManager protocol;
 	private final BlockingQueue<JSONObject> queueingQueue = Queues.newLinkedBlockingQueue();
 	private volatile boolean running = true;
 	private final Thread queueingWorker;
@@ -42,13 +42,13 @@ public class DefaultQueueingManager extends AbstractComponent implements Queuein
 	private final TaskPersistenceService taskPersistenceService;
 	private final Set<String> queueNameSet = Sets.newHashSet();
 	
-    public DefaultQueueingManager(ResourceManagementProtocol protocol) {
-		super(protocol.getContext());
-		this.protocol = protocol;
+    public DefaultQueueingManager(GlobalResourceManager manager) {
+		super(manager.getContext());
+		this.protocol = manager;
 		queueingWorker = new QueueingWorker();
 		queueingWorker.setName("QUEUEING-WORKER");
-		jobPersistenceService = protocol.getJobPersistenceService();
-		taskPersistenceService = protocol.getTaskPersistenceService();
+		jobPersistenceService = manager.getJobPersistenceService();
+		taskPersistenceService = manager.getTaskPersistenceService();
 	}
     
     @Override

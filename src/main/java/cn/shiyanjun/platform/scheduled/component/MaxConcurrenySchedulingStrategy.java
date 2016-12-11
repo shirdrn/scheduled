@@ -16,8 +16,8 @@ import cn.shiyanjun.platform.api.constants.TaskStatus;
 import cn.shiyanjun.platform.api.constants.TaskType;
 import cn.shiyanjun.platform.api.utils.Time;
 import cn.shiyanjun.platform.scheduled.common.JobQueueingService;
-import cn.shiyanjun.platform.scheduled.common.ResourceManagementProtocol;
-import cn.shiyanjun.platform.scheduled.common.ResourceMetadataManager;
+import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
+import cn.shiyanjun.platform.scheduled.common.ResourceManager;
 import cn.shiyanjun.platform.scheduled.common.ScheduledTask;
 import cn.shiyanjun.platform.scheduled.common.SchedulingStrategy;
 import cn.shiyanjun.platform.scheduled.common.TaskPersistenceService;
@@ -27,15 +27,15 @@ import cn.shiyanjun.platform.scheduled.dao.entities.Task;
 public class MaxConcurrenySchedulingStrategy extends AbstractComponent implements SchedulingStrategy {
 
 	private static final Log LOG = LogFactory.getLog(MaxConcurrenySchedulingStrategy.class);
-	private final ResourceMetadataManager resourceMetadataManager;
+	private final ResourceManager resourceMetadataManager;
 	private final TaskPersistenceService taskPersistenceService;
-	private final ResourceManagementProtocol protocol;
+	private final GlobalResourceManager manager;
 
-	public MaxConcurrenySchedulingStrategy(ResourceManagementProtocol protocol) {
-		super(protocol.getContext());
-		this.protocol = protocol;
-        this.taskPersistenceService = protocol.getTaskPersistenceService();
-        this.resourceMetadataManager = protocol.getResourceMetadataManager();
+	public MaxConcurrenySchedulingStrategy(GlobalResourceManager manager) {
+		super(manager.getContext());
+		this.manager = manager;
+        this.taskPersistenceService = manager.getTaskPersistenceService();
+        this.resourceMetadataManager = manager.getResourceMetadataManager();
 	}
 
 	@Override
@@ -45,7 +45,7 @@ public class MaxConcurrenySchedulingStrategy extends AbstractComponent implement
 		int availableResources = resourceMetadataManager.queryResource(queue, taskType);
 		LOG.debug("Available resources: queue=" + queue + ", taskType=" + taskType + ", resources=" + availableResources);
         if (availableResources > 0) {
-            DefaultQueueingManager.QueueingContext queueingContext = protocol.getQueueingManager().getQueueingContext(queue);
+            DefaultQueueingManager.QueueingContext queueingContext = manager.getQueueingManager().getQueueingContext(queue);
             JobQueueingService qs = queueingContext.getJobQueueingService();
             Set<String> jobs = qs.getJobs();
             if(CollectionUtils.isNotEmpty(jobs)) {

@@ -5,8 +5,8 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 
 import cn.shiyanjun.platform.scheduled.common.QueueingManager;
-import cn.shiyanjun.platform.scheduled.common.ResourceManagementProtocol;
-import cn.shiyanjun.platform.scheduled.common.ResourceMetadataManager;
+import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
+import cn.shiyanjun.platform.scheduled.common.ResourceManager;
 import cn.shiyanjun.platform.scheduled.common.RestManageable;
 import cn.shiyanjun.platform.scheduled.common.SchedulingStrategy;
 
@@ -20,10 +20,10 @@ public abstract class AbstractServlet extends HttpServlet {
     private final RestManageable restManageable;
     private final QueueingManager queueingManager;
 	private final SchedulingStrategy schedulingStrategy;
-	private final ResourceMetadataManager resourceMetadataManager;
-	protected final ResourceManagementProtocol protocol;
+	private final ResourceManager resourceMetadataManager;
+	protected final GlobalResourceManager protocol;
 
-    public AbstractServlet(ResourceManagementProtocol protocol) {
+    public AbstractServlet(GlobalResourceManager protocol) {
         super();
         this.protocol = protocol;
         restManageable= protocol.getRestManageable();
@@ -49,7 +49,7 @@ public abstract class AbstractServlet extends HttpServlet {
 		return schedulingStrategy;
 	}
 	
-	public ResourceMetadataManager getResourceMetadataManager() {
+	public ResourceManager getResourceMetadataManager() {
 		return resourceMetadataManager;
 	}
 }

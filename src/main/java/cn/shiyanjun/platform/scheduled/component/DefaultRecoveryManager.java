@@ -28,34 +28,34 @@ import cn.shiyanjun.platform.scheduled.common.JobPersistenceService;
 import cn.shiyanjun.platform.scheduled.common.JobQueueingService;
 import cn.shiyanjun.platform.scheduled.common.QueueingManager;
 import cn.shiyanjun.platform.scheduled.common.RecoveryManager;
-import cn.shiyanjun.platform.scheduled.common.ResourceManagementProtocol;
+import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 import cn.shiyanjun.platform.scheduled.dao.entities.Job;
 
 public class DefaultRecoveryManager implements RecoveryManager {
 
 	private static final Log LOG = LogFactory.getLog(DefaultRecoveryManager.class);
-	private final ResourceManagementProtocol protocol;
+	private final GlobalResourceManager manager;
 	private final JobPersistenceService jobPersistenceService;
 	private final QueueingManager queueingManager;
 	private final BlockingQueue<JSONObject> needRecoveredTaskQueue = Queues.newLinkedBlockingQueue();
 	private final Map<Integer, JSONObject> processedPendingRecoveryJobs = Maps.newHashMap();
 
-	public DefaultRecoveryManager(ResourceManagementProtocol protocol) {
+	public DefaultRecoveryManager(GlobalResourceManager manager) {
 		super();
-		this.protocol = protocol;
-		jobPersistenceService = protocol.getJobPersistenceService();
-		queueingManager = protocol.getQueueingManager();
+		this.manager = manager;
+		jobPersistenceService = manager.getJobPersistenceService();
+		queueingManager = manager.getQueueingManager();
 	}
 
 	@Override
 	public void start() {
 		try {
-			protocol.getHeartbeatMQAccessService().start();
+			manager.getHeartbeatMQAccessService().start();
 			
 			LOG.info("Start to read messages from MQ ...");
-			final Channel channel = protocol.getHeartbeatMQAccessService().getChannel();
-			final String q = protocol.getHeartbeatMQAccessService().getQueueName();
+			final Channel channel = manager.getHeartbeatMQAccessService().getChannel();
+			final String q = manager.getHeartbeatMQAccessService().getQueueName();
 			
 			while(true) {
 				GetResponse response = channel.basicGet(q, false);
@@ -95,7 +95,7 @@ public class DefaultRecoveryManager implements RecoveryManager {
 			LOG.error("Recovery failure:", e);
 			Throwables.propagate(e);
 		} finally {
-			protocol.getHeartbeatMQAccessService().stop();
+			manager.getHeartbeatMQAccessService().stop();
 		}
 	}
 	
