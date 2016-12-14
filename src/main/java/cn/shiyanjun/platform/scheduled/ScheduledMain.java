@@ -27,7 +27,7 @@ import cn.shiyanjun.platform.scheduled.component.DefaultQueueingManager;
 import cn.shiyanjun.platform.scheduled.component.DefaultRecoveryManager;
 import cn.shiyanjun.platform.scheduled.component.DefaultSchedulingManager;
 import cn.shiyanjun.platform.scheduled.component.JobPersistenceServiceImpl;
-import cn.shiyanjun.platform.scheduled.component.MaxConcurrenySchedulingStrategy;
+import cn.shiyanjun.platform.scheduled.component.MaxConcurrencySchedulingStrategy;
 import cn.shiyanjun.platform.scheduled.component.RabbitMQAccessService;
 import cn.shiyanjun.platform.scheduled.component.ResourceMetadataManagerImpl;
 import cn.shiyanjun.platform.scheduled.component.RestManagementExporter;
@@ -88,7 +88,7 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 		resourceMetadataManager = new ResourceMetadataManagerImpl(context);
 		queueingManager = new DefaultQueueingManager(this);
 		scheduledJobFetcher = new ScheduledJobFetcher(this);
-		schedulingStrategy = new MaxConcurrenySchedulingStrategy(this);
+		schedulingStrategy = new MaxConcurrencySchedulingStrategy(this);
 		schedulingManager = new DefaultSchedulingManager(this);
 		recoveryManager = new DefaultRecoveryManager(this);
 		restManageable = new RestManagementExporter(this);

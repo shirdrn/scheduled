@@ -1,0 +1,215 @@
+package cn.shiyanjun.platform.scheduled.component;
+
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentMap;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
+import com.alibaba.fastjson.JSONObject;
+import com.google.common.collect.Maps;
+
+import cn.shiyanjun.platform.api.constants.JobStatus;
+import cn.shiyanjun.platform.api.constants.TaskStatus;
+import cn.shiyanjun.platform.api.utils.Time;
+import cn.shiyanjun.platform.scheduled.component.DefaultSchedulingManager.JobInfo;
+import cn.shiyanjun.platform.scheduled.component.DefaultSchedulingManager.TaskID;
+import cn.shiyanjun.platform.scheduled.component.DefaultSchedulingManager.TaskInfo;
+import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
+import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
+import cn.shiyanjun.platform.scheduled.dao.entities.Job;
+import cn.shiyanjun.platform.scheduled.dao.entities.Task;
+
+/**
+ * Check jobs whose status are deem to be not updated for a specified time,
+ * and decide to clear the tasks' in-redis or in-memory statuses.
+ * 
+ * @author yanjun
+ */
+class StaleJobChecker implements Runnable {
+	
+	private static final Log LOG = LogFactory.getLog(StaleJobChecker.class);
+	private final DefaultSchedulingManager sched;
+	private final ConcurrentMap<Integer, JobInfo> timeoutJobIdToInfos = Maps.newConcurrentMap();
+	private final int keptTimeoutJobMaxCount;
+	private final int staleTaskMaxThresholdSecs;
+	private final long staleTaskMaxThresholdMillis;
+	
+	public StaleJobChecker(final DefaultSchedulingManager schedulingManager) {
+		this.sched = schedulingManager;
+		keptTimeoutJobMaxCount = schedulingManager.manager.getContext().getInt(ConfigKeys.SCHEDULED_KEPT_TIMEOUT_JOB_MAX_COUNT, 100);
+		// default 2 hours
+		staleTaskMaxThresholdSecs = schedulingManager.manager.getContext().getInt(ConfigKeys.SCHEDULED_STALE_TASK_MAX_THRESHOLD_SECS, 7200);
+		staleTaskMaxThresholdMillis = staleTaskMaxThresholdSecs * 1000;
+	}
+	
+	@Override
+	public void run() {
+		LOG.debug("Start to check stale jobs...");
+		try {
+			// check stale job/tasks in-memory
+			checkInMemStaleJobs();
+			
+			// check stale job/tasks in-db/in-redis
+			checkJobStatuses();
+		} catch (Exception e) {
+			LOG.warn("Fail to check stale jobs: ", e);
+		} finally {
+			LOG.debug("Complete to check stale jobs.");
+		}
+	}
+	
+	void checkJobStatuses() {
+		// check stale job/tasks in DB, and update status for these job/tasks
+		checkInDBStaleJobs();
+		
+		// purge stale jobs in Redis queue
+		checkInRedisStaleJobs();
+	}
+	
+	private void checkInDBStaleJobs() {
+		// job with RUNNING status
+		List<Job> jobs = sched.getJobByState(JobStatus.RUNNING);
+		for(Job job : jobs) {
+			int jobId = job.getId();
+			long now = Time.now();
+			// check a running job
+			if(now - job.getDoneTime().getTime() > staleTaskMaxThresholdMillis) {
+				LOG.info("Stale in-db job: jobId=" + jobId);
+				List<Task> tasks = sched.getTasksFor(job.getId());
+				JobInfo jobInfo = sched.runningJobIdToInfos.get(jobId);
+				if(jobInfo == null) {
+					sched.updateJobInfo(job.getId(), JobStatus.FAILED);
+				} else {
+					String queue = jobInfo.queue;
+					for(Task task : tasks) {
+						if(task.getStatus() == TaskStatus.RUNNING.getCode()) {
+							LinkedList<TaskID> inMemTasks = sched.runningJobToTaskList.get(jobId);
+							if(inMemTasks != null) {
+								inMemTasks.stream().forEach(id -> {
+									TaskInfo ti = sched.runningTaskIdToInfos.get(id);
+									if(ti != null && ti.taskStatus == TaskStatus.RUNNING 
+											&& sched.manager.getPlatformId().equals(ti.platformId)) {
+										sched.releaseResource(queue, ti.taskType);
+										sched.updateTaskInfo(ti.id, TaskStatus.FAILED);
+										sched.incrementTimeoutTaskCount(queue);
+									}
+								});
+							}
+						}
+					}
+					try {
+						jobInfo.inMemJobUpdateLock.lock();
+						jobInfo.jobStatus = JobStatus.FAILED;
+					} finally {
+						jobInfo.inMemJobUpdateLock.unlock();
+					}
+					sched.handleInMemoryCompletedTask(jobId);
+					removeJobFromRedis(queue, jobId);
+					handleTimeoutInMemTask(jobInfo, now);
+				}
+				
+				// check running tasks
+				for(Task task : tasks) {
+					// task with RUNNING status
+					if(task.getStatus() == TaskStatus.RUNNING.getCode()) {
+						sched.updateTaskInfo(job.getId(), task.getId(), TaskStatus.FAILED);
+					}
+				}
+			}
+		}
+	}
+	
+	private void removeJobFromRedis(String queue, int jobId) {
+		Set<String> redisJobs = sched.getJobs(queue);
+		if(redisJobs.contains(String.valueOf(jobId))) {
+			sched.removeRedisJob(queue, jobId);
+		}		
+	}
+
+	private void checkInMemStaleJobs() {
+		for(int jobId : sched.runningJobIdToInfos.keySet()) {
+			JobInfo jobInfo = sched.runningJobIdToInfos.get(jobId);
+			
+			// check timeout jobs  
+			boolean isTimeout = Time.now() - jobInfo.lastUpdatedTime > staleTaskMaxThresholdMillis;
+			if(jobInfo.jobStatus != JobStatus.SUCCEEDED && jobInfo.jobStatus != JobStatus.FAILED && isTimeout) {
+				LOG.info("Stale in-mem job: jobInfo=" + jobInfo);
+				String queue = jobInfo.queue;
+				try {
+					jobInfo.inMemJobUpdateLock.lock();
+					jobInfo.jobStatus = JobStatus.FAILED;
+				} finally {
+					jobInfo.inMemJobUpdateLock.unlock();
+				}
+				
+				LinkedList<TaskID> inMemTasks = sched.runningJobToTaskList.get(jobId);
+				if(inMemTasks != null) {
+					inMemTasks.stream().forEach(id -> {
+						TaskInfo ti = sched.runningTaskIdToInfos.get(id);
+						if(ti != null && ti.taskStatus == TaskStatus.RUNNING 
+								&& sched.manager.getPlatformId().equals(ti.platformId)) {
+							sched.releaseResource(queue, ti.taskType);
+							sched.updateTaskInfo(ti.id, TaskStatus.FAILED);
+							sched.incrementTimeoutTaskCount(queue);
+						}
+					});
+				}
+				sched.updateJobInfo(jobId, JobStatus.FAILED);
+				
+				// handle in-memory completed job
+				sched.handleInMemoryCompletedTask(jobId);
+				removeJobFromRedis(queue, jobId);
+			}
+		}
+		
+	}
+	
+	private void checkInRedisStaleJobs() {
+		for(String queue : sched.queueingManager.queueNames()) {
+			Set<String> jobs = sched.getJobs(queue);
+			for(String jstrJob : jobs) {
+				JSONObject job = JSONObject.parseObject(jstrJob);
+				int jobId = job.getIntValue(ScheduledConstants.JOB_ID);
+				String jStatus = job.getString(ScheduledConstants.JOB_STATUS);
+				JobStatus jobStatus = JobStatus.valueOf(jStatus);
+				long lastUpdateTs = job.getLongValue(ScheduledConstants.LAST_UPDATE_TS);
+				
+				JobInfo jobInfo = sched.runningJobIdToInfos.get(jobId);
+				if(jobInfo == null) {
+					// clear job with FAILED status from Redis queue
+					if(jobStatus == JobStatus.FAILED) {
+						removeJobFromRedis(queue, jobId);
+						LOG.warn("Stale job in Redis purged: queue=" + queue + ", job=" + job);
+					}
+					
+					// clear timeout job with RUNNING status && in Redis queue
+					long now = Time.now();
+					if(jobStatus == JobStatus.RUNNING 
+							&& now - lastUpdateTs > staleTaskMaxThresholdMillis) {
+						removeJobFromRedis(queue, jobId);
+						LOG.warn("Stale job in Redis purged: queue=" + queue + ", job=" + job);
+					}
+				}
+			}
+		}
+	}
+	
+	private void handleTimeoutInMemTask(JobInfo jobInfo, long now) {
+		int jobId = jobInfo.jobId;
+		jobInfo.lastUpdatedTime = now;
+		timeoutJobIdToInfos.putIfAbsent(jobId, jobInfo);
+		jobInfo.jobStatus = JobStatus.FAILED;
+		if(timeoutJobIdToInfos.size() > 2 * keptTimeoutJobMaxCount) {
+			timeoutJobIdToInfos.values().stream()
+			.sorted((x, y) -> x.lastUpdatedTime - y.lastUpdatedTime < 0 ? -1 : 1)
+			.limit(keptTimeoutJobMaxCount)
+			.forEach(ji -> {
+				timeoutJobIdToInfos.remove(ji.jobId);
+			});
+		}
+	}
+
+}

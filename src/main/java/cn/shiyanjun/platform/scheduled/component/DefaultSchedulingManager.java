@@ -25,6 +25,7 @@ import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Queues;
+import com.google.common.collect.Sets;
 import com.rabbitmq.client.AMQP.BasicProperties;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Envelope;
@@ -38,13 +39,13 @@ import cn.shiyanjun.platform.api.constants.TaskType;
 import cn.shiyanjun.platform.api.utils.NamedThreadFactory;
 import cn.shiyanjun.platform.api.utils.Time;
 import cn.shiyanjun.platform.scheduled.common.AbstractRunnableConsumer;
+import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
 import cn.shiyanjun.platform.scheduled.common.JobPersistenceService;
 import cn.shiyanjun.platform.scheduled.common.JobQueueingService;
 import cn.shiyanjun.platform.scheduled.common.MQAccessService;
 import cn.shiyanjun.platform.scheduled.common.QueueingManager;
-import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
 import cn.shiyanjun.platform.scheduled.common.ResourceManager;
-import cn.shiyanjun.platform.scheduled.common.ScheduledTask;
+import cn.shiyanjun.platform.scheduled.common.TaskOrder;
 import cn.shiyanjun.platform.scheduled.common.SchedulingManager;
 import cn.shiyanjun.platform.scheduled.common.SchedulingStrategy;
 import cn.shiyanjun.platform.scheduled.common.TaskPersistenceService;
@@ -54,6 +55,17 @@ import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 import cn.shiyanjun.platform.scheduled.dao.entities.Job;
 import cn.shiyanjun.platform.scheduled.dao.entities.Task;
 
+/**
+ * Manage job/task scheduling, includes:
+ * <ol>
+ * 	<li>Select a task to be scheduled.</li>
+ * 	<li>Consume task result response from RabbitMQ.</li>
+ * 	<li>Process task responses to manage job/task statuses.</li>
+ * 	<li>Manage to update task resource counters</li>
+ * 	<li>Manage job/task in-memory status changes</li>
+ * </ol>
+ * @author yanjun
+ */
 public class DefaultSchedulingManager extends AbstractComponent implements SchedulingManager {
 
 	private static final Log LOG = LogFactory.getLog(DefaultSchedulingManager.class);
@@ -67,14 +79,14 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 	private final MQAccessService heartbeatMQAccessService;
 	private volatile boolean running = true;
 	protected final ConcurrentMap<Integer, JobInfo> runningJobIdToInfos = Maps.newConcurrentMap();
-	private final ConcurrentMap<Integer, LinkedList<TaskID>> runningJobToTaskList = Maps.newConcurrentMap();
+	protected final ConcurrentMap<Integer, LinkedList<TaskID>> runningJobToTaskList = Maps.newConcurrentMap();
 	protected final ConcurrentMap<TaskID, TaskInfo> runningTaskIdToInfos = Maps.newConcurrentMap();
 	private final ConcurrentMap<Integer, JobInfo> completedJobIdToInfos = Maps.newConcurrentMap();
 	private final SchedulingStrategy schedulingStrategy;
 	private final ResourceManager resourceMetadataManager;
 	private final FreshTasksResponseProcessingManager freshTasksResponseProcessingManager;
 	private final BlockingQueue<HeartbeatHolder> rawHeartbeatMessages = Queues.newLinkedBlockingQueue();
-	private final StaleTaskChecker staleTaskChecker;
+	private final StaleJobChecker staleJobChecker;
 	
 	private final int keptHistoryJobMaxCount;
 	private final TasksResponseHandler<HeartbeatHolder> tenuredInflightTasksResponseHandler = new TenuredInflightTaskResponseHandler();
@@ -92,7 +104,7 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 		jobPersistenceService = manager.getJobPersistenceService();
 		resourceMetadataManager = manager.getResourceMetadataManager();
 		freshTasksResponseProcessingManager = new FreshTasksResponseProcessingManager();
-		staleTaskChecker = new StaleTaskChecker(this);
+		staleJobChecker = new StaleJobChecker(this);
 		taskResponseHandlingController = new SimpleTaskResponseHandlingController(context);
 		
 		keptHistoryJobMaxCount = context.getInt(ConfigKeys.SCHEDULED_KEPT_HISTORY_JOB_MAX_COUNT, 200);
@@ -117,7 +129,7 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 		// default 15 minutes
 		final int staleTaskCheckIntervalSecs = context.getInt(ConfigKeys.SCHEDULED_STALE_TASK_CHECK_INTERVAL_SECS, 900);
 		scheduledExecutorService.scheduleAtFixedRate(
-				staleTaskChecker, staleTaskCheckIntervalSecs, staleTaskCheckIntervalSecs, TimeUnit.SECONDS);
+				staleJobChecker, staleTaskCheckIntervalSecs, staleTaskCheckIntervalSecs, TimeUnit.SECONDS);
 	}
 
 	@Override
@@ -156,16 +168,12 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 	}
 	
 	/**
-	 * We have defined 2 type of heartbeat messages from <code>Job Running Platform</code>:
+	 * We have defined 1 type of heartbeat messages from <code>Job Running Platform</code>:
 	 * <ul>
 	 * 	<li>Task progress heartbeat message</li>
-	 * <pre>
-	 * {"type":"taskProgress","tasks":[{"result":{"resultCount":6910757,"status":5},"jobId":1328,"taskType":2,"taskId":3404,"serialNo":3,"status":"SUCCEEDED"}]}</br>
-	 * </pre>
-	 * 	<li>Resource state heartbeat message</li>
-	 * <pre>
-	 * {"type":"resourceState","availability":[{"type":1,"count":8},{"type":2,"count":14}],"occupation":[{"type":1,"count":3},{"type":2,"count":5}],"traceTs":1470122113292}
-	 * </pre>
+	 * 		<pre>
+	 * 		{"type":"taskProgress","tasks":[{"result":{"resultCount":6910757,"status":5},"jobId":1328,"taskType":2,"taskId":3404,"serialNo":3,"status":"SUCCEEDED"}]}</br>
+	 * 		</pre>
 	 * </ul>
 	 * 
 	 * @author yanjun
@@ -192,7 +200,8 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 	
 	Set<String> getJobs(String queue) {
 		JobQueueingService qs = getJobQueueingService(queue);
-		return qs.getJobs();
+		Set<String> jobs = qs.getJobs();
+		return jobs == null ? Sets.newHashSet() : jobs;
 	}
 	
 	JSONObject getRedisJob(String queue, int jobId) throws Exception {
@@ -281,6 +290,15 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 						LOG.warn("Fail to recover task: " + taskResponse, e);
 					}
 				});
+				
+				List<Job> runnings = jobPersistenceService.getJobByState(JobStatus.RUNNING);
+				if(runnings != null) {
+					runnings.forEach(job -> {
+						job.setStatus(JobStatus.FAILED.getCode());
+						jobPersistenceService.updateJobByID(job);
+						LOG.info("Update in-db job to FAILED: jobId=" + job.getId());
+					});
+				}
 			}
 		}
 		
@@ -459,7 +477,7 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 					for(final String queue : queueingManager.queueNames()) {
 					    for(TaskType taskType : resourceMetadataManager.taskTypes(queue)) {
 					    	LOG.debug("Loop for: queue=" + queue + ", taskType=" + taskType);
-					    	Optional<ScheduledTask> offeredTask = schedulingStrategy.offerTask(queue, taskType);
+					    	Optional<TaskOrder> offeredTask = schedulingStrategy.offerTask(queue, taskType);
 					    	offeredTask.ifPresent(task -> {
 					    		int jobId = task.getTask().getJobId();
 					    		if(!runningJobIdToInfos.containsKey(jobId)) {
@@ -479,7 +497,7 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 			}
 		}
 		
-		private void scheduleTask(String queue, TaskType taskType, ScheduledTask scheduledTask, JobInfo jobInfo) {
+		private void scheduleTask(String queue, TaskType taskType, TaskOrder scheduledTask, JobInfo jobInfo) {
 			int jobId = scheduledTask.getTask().getJobId();
 			int taskId = scheduledTask.getTask().getId();
 			int serialNo = scheduledTask.getTask().getSerialNo();
@@ -646,7 +664,9 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 					// stale task checker has already update this job to timeout(actually FAILED)
 					if(jobInfo.jobStatus == JobStatus.RUNNING) {
 						if(newTaskStatus == taskInfo.taskStatus) {
-							taskInfo.lastUpdatedTime = Time.now();
+							long now = Time.now();
+							jobInfo.lastUpdatedTime = now;
+							taskInfo.lastUpdatedTime = now;
 						} else {
 							final Optional<String> q = getJobQueueByJobId(jobId);
 							q.ifPresent(queue -> {
@@ -654,7 +674,7 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 								
 								for (int i = 0; i < 3; i++) {
 									try {
-										processTaskResult(jobId, serialNo, taskType, taskId, id, queue, newTaskStatus, taskResponse, isTenuredTasksResponse);
+										processTaskResult(jobInfo, id, newTaskStatus, taskResponse, isTenuredTasksResponse);
 										break;
 									} catch (Exception e) {
 										LOG.warn("Fail to process task result: ", e);
@@ -677,25 +697,24 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 			}
 		}
 		
-		private void processTaskResult(int jobId, int serialNo, TaskType taskType, int taskId,
-				final TaskID id, final String queue, TaskStatus taskStatus, JSONObject taskResponse, boolean isTenuredTasksResponse) throws Exception {
+		private void processTaskResult(JobInfo jobInfo, final TaskID id, TaskStatus taskStatus, JSONObject taskResponse, boolean isTenuredTasksResponse) throws Exception {
 			LOG.debug("Process task result: " + taskResponse);
-			// 
+			final String queue = jobInfo.queue;
 			switch(taskStatus) {
 				case SUCCEEDED:
 					LOG.info("Task succeeded: " + taskResponse);
-					taskResponseHandlingController.releaseResource(queue, taskType, isTenuredTasksResponse);
-					updateTaskInfo(jobId, taskId, serialNo, taskStatus, taskResponse);
-					updateJobStatus(queue, jobId, id, taskStatus, taskResponse);
+					taskResponseHandlingController.releaseResource(queue, id.taskType, isTenuredTasksResponse);
+					updateTaskInfo(id, taskStatus, taskResponse);
+					updateJobStatus(jobInfo, id, taskStatus, taskResponse);
 					
 					taskResponseHandlingController.incrementSucceededTaskCount(queue, taskResponse);
 					logTaskCounterChanged(queue);
 					break;
 				case FAILED:
 					LOG.info("Task failed: " + taskResponse);
-					taskResponseHandlingController.releaseResource(queue, taskType, isTenuredTasksResponse);
-					updateTaskInfo(jobId, taskId, serialNo, taskStatus, taskResponse);
-					updateJobStatus(queue, jobId, id, taskStatus, taskResponse);
+					taskResponseHandlingController.releaseResource(queue, id.taskType, isTenuredTasksResponse);
+					updateTaskInfo(id, taskStatus, taskResponse);
+					updateJobStatus(jobInfo, id, taskStatus, taskResponse);
 					
 					taskResponseHandlingController.incrementFailedTaskCount(queue, taskResponse);
 					logTaskCounterChanged(queue);
@@ -704,10 +723,7 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 					LOG.info("Task running: " + taskResponse);
 					TaskInfo taskInfo = runningTaskIdToInfos.get(id);
 					taskInfo.lastUpdatedTime = Time.now();
-					JobInfo jobInfo = runningJobIdToInfos.get(jobId);
-					if(jobInfo != null) {
-						logInMemoryStateChanges(jobInfo, taskInfo);
-					}
+					logInMemoryStateChanges(jobInfo, taskInfo);
 					break;
 				default:
 					LOG.warn("Unknown state for task: state=" + taskStatus + ", task=" + id);						
@@ -773,19 +789,19 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 		return Optional.of(ji.queue);
 	}
 	
-	private void updateTaskInfo(int jobId, int taskId, int serialNo, TaskStatus taskStatus, JSONObject taskResponse) {
+	private void updateTaskInfo(TaskID id, TaskStatus taskStatus, JSONObject taskResponse) {
 		Integer resultCount = taskResponse.getInteger(ScheduledConstants.RESULT_COUNT);;
 		if(resultCount != null) {
 			Timestamp updateTime = new Timestamp(Time.now());
 			Task task = new Task();
-			task.setId(taskId);
+			task.setId(id.taskId);
 			task.setStatus(taskStatus.getCode());
 			task.setDoneTime(updateTime);
 			if(resultCount != null) {
 				task.setResultCount(resultCount);
 			}
 			taskPersistenceService.updateTaskByID(task);
-			LOG.info("In-db task state changed: jobId=" + jobId + ", taskId=" + taskId + ", serialNo=" + serialNo + 
+			LOG.info("In-db task state changed: jobId=" + id.jobId + ", taskId=" + id.taskId + ", serialNo=" + id.serialNo + 
 					", resultCount=" + resultCount + ", updateTime=" + updateTime + ", taskStatus=" + taskStatus);
 		}
 	}
@@ -797,6 +813,21 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 		taskPersistenceService.updateTaskByID(task);
 		LOG.info("In-db task state changed: jobId=" +
 				jobId + ", taskId=" + taskId + ", serialNo=" + serialNo + ", taskStatus=" + taskStatus);
+	}
+	
+	void updateTaskInfo(int jobId, int taskId, TaskStatus taskStatus) {
+		Timestamp updateTime = new Timestamp(Time.now());
+		Task userTask = new Task();
+		userTask.setId(taskId);
+		userTask.setStatus(taskStatus.getCode());
+		userTask.setDoneTime(updateTime);
+		taskPersistenceService.updateTaskByID(userTask);
+		LOG.info("In-db task state changed: jobId=" + jobId + ", taskId=" + taskId + 
+				", updateTime=" + updateTime + ", taskStatus=" + taskStatus);
+	}
+
+	void updateTaskInfo(TaskID id, TaskStatus taskStatus) {
+		updateTaskInfo(id.jobId, id.taskId, taskStatus);
 	}
 	
 	void updateTaskInfo(int jobId, int taskId, int serialNo, TaskStatus taskStatus) {
@@ -841,60 +872,59 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 		LOG.info("In-db job state changed: jobId=" + jobId + ", updateTime=" + updateTime);
 	}
 	
-	private void updateJobStatus(String queue, int jobId, TaskID id, TaskStatus status, JSONObject taskResponse) throws Exception {
-		JobInfo jobInfo = runningJobIdToInfos.get(jobId);
-		if(jobInfo != null) {
-			int taskCount = jobInfo.taskCount;
-			LinkedList<TaskID> tasks = runningJobToTaskList.get(jobId);
+	private void updateJobStatus(JobInfo jobInfo, TaskID id, TaskStatus status, JSONObject taskResponse) throws Exception {
+		int jobId = jobInfo.jobId;
+		String queue = jobInfo.queue;
+		int taskCount = jobInfo.taskCount;
+		LinkedList<TaskID> tasks = runningJobToTaskList.get(jobId);
+		
+		// the last task was returned back
+		if(taskCount == tasks.size()) {
+			boolean isSuccess = false;
+			if(status == TaskStatus.SUCCEEDED) {
+				isSuccess = true;
+			}
+			JobStatus jobStatus = isSuccess ? JobStatus.SUCCEEDED : JobStatus.FAILED;
+			removeRedisJob(queue, jobId);
 			
-			// the last task was returned back
-			if(taskCount == tasks.size()) {
-				boolean isSuccess = false;
-				if(status == TaskStatus.SUCCEEDED) {
-					isSuccess = true;
-				}
-				JobStatus jobStatus = isSuccess ? JobStatus.SUCCEEDED : JobStatus.FAILED;
+			updateJobInfo(jobId, jobStatus);
+			
+			jobInfo.lastUpdatedTime = Time.now();
+			jobInfo.jobStatus = jobStatus;
+			logInMemoryJobStateChanged(jobInfo);
+		} else {
+			// non-last task
+			JSONObject queuedJob = getRedisJob(queue, jobId);
+			TaskInfo taskInfo = runningTaskIdToInfos.get(id);
+			taskInfo.lastUpdatedTime = Time.now();
+			if(status == TaskStatus.SUCCEEDED) {
+				updateJobInfo(jobId, taskInfo.lastUpdatedTime);
+				
+				// task was succeeded, update job status to QUEUEING in Redis queue to make next task be scheduled
+				queuedJob.put(ScheduledConstants.JOB_STATUS, JobStatus.QUEUEING.toString());
+				queuedJob.put(ScheduledConstants.TASK_STATUS, TaskStatus.SUCCEEDED.toString());
+				queuedJob.put(ScheduledConstants.LAST_UPDATE_TS, Time.now());
+				updateRedisState(jobId, queue, queuedJob);
+				
+				// update in-memory task status
+				taskInfo.taskStatus = status;
+				logInMemoryStateChanges(jobInfo, taskInfo);
+			} else {
+				// task was failed, remove from Redis queue, and update job status to FAILED in job database.
+				// TODO later maybe we should give it a flexible policy, such as giving a chance to be rescheduled.
 				removeRedisJob(queue, jobId);
 				
-				updateJobInfo(jobId, jobStatus);
+				updateJobInfo(jobId, JobStatus.FAILED);
 				
-				jobInfo.lastUpdatedTime = Time.now();
-				jobInfo.jobStatus = jobStatus;
-				logInMemoryJobStateChanged(jobInfo);
-			} else {
-				// non-last task
-				JSONObject queuedJob = getRedisJob(queue, jobId);
-				TaskInfo taskInfo = runningTaskIdToInfos.get(id);
-				taskInfo.lastUpdatedTime = Time.now();
-				if(status == TaskStatus.SUCCEEDED) {
-					updateJobInfo(jobId, taskInfo.lastUpdatedTime);
-					
-					// task was succeeded, update job status to QUEUEING in Redis queue to make next task be scheduled
-					queuedJob.put(ScheduledConstants.JOB_STATUS, JobStatus.QUEUEING.toString());
-					queuedJob.put(ScheduledConstants.TASK_STATUS, TaskStatus.SUCCEEDED.toString());
-					queuedJob.put(ScheduledConstants.LAST_UPDATE_TS, Time.now());
-					updateRedisState(jobId, queue, queuedJob);
-					
-					// update in-memory task status
-					taskInfo.taskStatus = status;
-					logInMemoryStateChanges(jobInfo, taskInfo);
-				} else {
-					// task was failed, remove from Redis queue, and update job status to FAILED in job database.
-					// TODO later maybe we should give it a flexible policy, such as giving a chance to be rescheduled.
-					removeRedisJob(queue, jobId);
-					
-					updateJobInfo(jobId, JobStatus.FAILED);
-					
-					// update in-memroy job/task status
-					jobInfo.jobStatus = JobStatus.FAILED;
-					taskInfo.taskStatus = status;
-					logInMemoryStateChanges(jobInfo, taskInfo);
-				}
+				// update in-memroy job/task status
+				jobInfo.jobStatus = JobStatus.FAILED;
+				taskInfo.taskStatus = status;
+				logInMemoryStateChanges(jobInfo, taskInfo);
 			}
-			
-			// handle in-memory completed task
-			handleInMemoryCompletedTask(id);
 		}
+		
+		// handle in-memory completed task
+		handleInMemoryCompletedTask(id);
 	}
 	
 	void handleInMemoryCompletedTask(int jobId) {

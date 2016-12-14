@@ -12,6 +12,6 @@ public interface SchedulingStrategy {
 	 * @param taskType
 	 * @return
 	 */
-    public Optional<ScheduledTask> offerTask(String queueName, TaskType taskType);
+    public Optional<TaskOrder> offerTask(String queueName, TaskType taskType);
     
 }

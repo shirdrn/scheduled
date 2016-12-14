@@ -18,20 +18,28 @@ import cn.shiyanjun.platform.api.utils.Time;
 import cn.shiyanjun.platform.scheduled.common.JobQueueingService;
 import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
 import cn.shiyanjun.platform.scheduled.common.ResourceManager;
-import cn.shiyanjun.platform.scheduled.common.ScheduledTask;
+import cn.shiyanjun.platform.scheduled.common.TaskOrder;
 import cn.shiyanjun.platform.scheduled.common.SchedulingStrategy;
 import cn.shiyanjun.platform.scheduled.common.TaskPersistenceService;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 import cn.shiyanjun.platform.scheduled.dao.entities.Task;
 
-public class MaxConcurrenySchedulingStrategy extends AbstractComponent implements SchedulingStrategy {
+/**
+ * Offer a task to be scheduled based on the maximum concurrency limits, if the resources 
+ * are available. It controls to update resource counter for the specified task type, 
+ * which is managed by another component {@link ResourceManager}.
+ * 
+ * @see {@link ResourceMetadataManagerImpl}
+ * @author yanjun
+ */
+public class MaxConcurrencySchedulingStrategy extends AbstractComponent implements SchedulingStrategy {
 
-	private static final Log LOG = LogFactory.getLog(MaxConcurrenySchedulingStrategy.class);
+	private static final Log LOG = LogFactory.getLog(MaxConcurrencySchedulingStrategy.class);
 	private final ResourceManager resourceMetadataManager;
 	private final TaskPersistenceService taskPersistenceService;
 	private final GlobalResourceManager manager;
 
-	public MaxConcurrenySchedulingStrategy(GlobalResourceManager manager) {
+	public MaxConcurrencySchedulingStrategy(GlobalResourceManager manager) {
 		super(manager.getContext());
 		this.manager = manager;
         this.taskPersistenceService = manager.getTaskPersistenceService();
@@ -39,8 +47,8 @@ public class MaxConcurrenySchedulingStrategy extends AbstractComponent implement
 	}
 
 	@Override
-    public synchronized Optional<ScheduledTask> offerTask(String queue, TaskType taskType) {
-		Optional<ScheduledTask> got = Optional.empty();
+    public synchronized Optional<TaskOrder> offerTask(String queue, TaskType taskType) {
+		Optional<TaskOrder> got = Optional.empty();
 		// allocate resource
 		int availableResources = resourceMetadataManager.queryResource(queue, taskType);
 		LOG.debug("Available resources: queue=" + queue + ", taskType=" + taskType + ", resources=" + availableResources);
@@ -75,10 +83,10 @@ public class MaxConcurrenySchedulingStrategy extends AbstractComponent implement
                         			}
                         		}
                         		if(taskType.getCode() == utask.getTaskType()) {
-                        			ScheduledTask scheduledTask = new ScheduledTask(utask);
-                        			scheduledTask.setTaskCount(taskCount);
+                        			TaskOrder taskOrder = new TaskOrder(utask);
+                        			taskOrder.setTaskCount(taskCount);
                         			updateJobInRedisAfterTaskScheduled(qs, utask, jsonObject, taskStatus);
-                        			got = Optional.of(scheduledTask);
+                        			got = Optional.of(taskOrder);
                         		}
                         	}
                     	} else if(taskStatus.equals(ScheduledConstants.TASK_INITIAL_STATUS.toString())) {
@@ -87,10 +95,10 @@ public class MaxConcurrenySchedulingStrategy extends AbstractComponent implement
                         	if(tasksBelongingJob != null && !tasksBelongingJob.isEmpty()) {
                         		Task ut = tasksBelongingJob.get(0);
                         		if(taskType.getCode() == ut.getTaskType()) {
-    	                    		ScheduledTask scheduledTask = new ScheduledTask(ut);
-    	                			scheduledTask.setTaskCount(taskCount);
+    	                    		TaskOrder taskOrder = new TaskOrder(ut);
+    	                			taskOrder.setTaskCount(taskCount);
     	                			updateJobInRedisAfterTaskScheduled(qs, ut, jsonObject, taskStatus);
-    	                			got = Optional.of(scheduledTask);
+    	                			got = Optional.of(taskOrder);
                         		}
                         	}
                     	}

@@ -3,12 +3,12 @@ package cn.shiyanjun.platform.scheduled.common;
 import cn.shiyanjun.platform.api.constants.TaskType;
 import cn.shiyanjun.platform.scheduled.dao.entities.Task;
 
-public class ScheduledTask {
+public class TaskOrder {
 
 	private Task task;
 	private int taskCount;
 	
-	public ScheduledTask(Task task) {
+	public TaskOrder(Task task) {
 		super();
 		this.task = task;
 	}
