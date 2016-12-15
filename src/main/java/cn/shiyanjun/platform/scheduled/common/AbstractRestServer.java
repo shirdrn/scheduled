@@ -54,7 +54,9 @@ public abstract class AbstractRestServer extends AbstractComponent implements Re
 			server.start();
 		} catch (Exception e) {
 			Throwables.propagate(e);
-		}		
+		} finally {
+			stop();
+		}
 	}
 
 	@Override

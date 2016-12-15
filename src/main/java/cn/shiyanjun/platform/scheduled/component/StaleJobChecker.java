@@ -72,7 +72,7 @@ class StaleJobChecker implements Runnable {
 	private void checkInDBStaleJobs() {
 		// job with RUNNING status
 		List<Job> jobs = sched.getJobByState(JobStatus.RUNNING);
-		for(Job job : jobs) {
+		jobs.forEach(job -> {
 			int jobId = job.getId();
 			long now = Time.now();
 			// check a running job
@@ -84,11 +84,11 @@ class StaleJobChecker implements Runnable {
 					sched.updateJobInfo(job.getId(), JobStatus.FAILED);
 				} else {
 					String queue = jobInfo.queue;
-					for(Task task : tasks) {
+					tasks.forEach(task -> {
 						if(task.getStatus() == TaskStatus.RUNNING.getCode()) {
 							LinkedList<TaskID> inMemTasks = sched.runningJobToTaskList.get(jobId);
 							if(inMemTasks != null) {
-								inMemTasks.stream().forEach(id -> {
+								inMemTasks.forEach(id -> {
 									TaskInfo ti = sched.runningTaskIdToInfos.get(id);
 									if(ti != null && ti.taskStatus == TaskStatus.RUNNING 
 											&& sched.manager.getPlatformId().equals(ti.platformId)) {
@@ -99,7 +99,7 @@ class StaleJobChecker implements Runnable {
 								});
 							}
 						}
-					}
+					});
 					try {
 						jobInfo.inMemJobUpdateLock.lock();
 						jobInfo.jobStatus = JobStatus.FAILED;
@@ -112,18 +112,18 @@ class StaleJobChecker implements Runnable {
 				}
 				
 				// check running tasks
-				for(Task task : tasks) {
+				tasks.forEach(task -> {
 					// task with RUNNING status
 					if(task.getStatus() == TaskStatus.RUNNING.getCode()) {
 						sched.updateTaskInfo(job.getId(), task.getId(), TaskStatus.FAILED);
 					}
-				}
+				});
 			}
-		}
+		});
 	}
 	
 	private void checkInMemStaleJobs() {
-		for(int jobId : sched.runningJobIdToInfos.keySet()) {
+		sched.runningJobIdToInfos.keySet().forEach(jobId -> {
 			JobInfo jobInfo = sched.runningJobIdToInfos.get(jobId);
 			
 			// check timeout jobs  
@@ -140,7 +140,7 @@ class StaleJobChecker implements Runnable {
 				
 				LinkedList<TaskID> inMemTasks = sched.runningJobToTaskList.get(jobId);
 				if(inMemTasks != null) {
-					inMemTasks.stream().forEach(id -> {
+					inMemTasks.forEach(id -> {
 						TaskInfo ti = sched.runningTaskIdToInfos.get(id);
 						if(ti != null && ti.taskStatus == TaskStatus.RUNNING 
 								&& sched.manager.getPlatformId().equals(ti.platformId)) {
@@ -156,14 +156,13 @@ class StaleJobChecker implements Runnable {
 				sched.handleInMemoryCompletedTask(jobId);
 				sched.removeRedisJob(queue, jobId);
 			}
-		}
-		
+		});
 	}
 	
 	private void checkInRedisStaleJobs() {
-		for(String queue : sched.queueingManager.queueNames()) {
+		sched.queueingManager.queueNames().forEach(queue -> {
 			Set<String> jobs = sched.getJobs(queue);
-			for(String jstrJob : jobs) {
+			jobs.forEach(jstrJob -> {
 				JSONObject job = JSONObject.parseObject(jstrJob);
 				int jobId = job.getIntValue(ScheduledConstants.JOB_ID);
 				String jStatus = job.getString(ScheduledConstants.JOB_STATUS);
@@ -186,8 +185,8 @@ class StaleJobChecker implements Runnable {
 						LOG.warn("Stale job in Redis purged: queue=" + queue + ", job=" + job);
 					}
 				}
-			}
-		}
+			});
+		});
 	}
 	
 	private void handleTimeoutInMemTask(JobInfo jobInfo, long now) {

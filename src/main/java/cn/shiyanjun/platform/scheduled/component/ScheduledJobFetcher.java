@@ -122,7 +122,7 @@ public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher
 				LOG.info("Fetch jobs: count=" + submittedJobs.size());
 			}
 			
-			for(Job job : submittedJobs) {
+			submittedJobs.forEach(job -> {
 				Integer jobId = null;
 				try{
 					jobId = job.getId();
@@ -139,12 +139,12 @@ public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher
 					
 					if(!jobData.isEmpty()) {
 						// prepare to execute queueing
-						manager.getQueueingManager().dispatch(jobData);
+						manager.getQueueingManager().collect(jobData);
 					}
 				} catch(Exception e) {
 					LOG.error("Fail to build: jobId=" + job.getId() + ", params=" + job.getParams(), e);
 				}
-			}
+			});
 		}
 	}
 

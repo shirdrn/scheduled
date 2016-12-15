@@ -100,10 +100,10 @@ public class ResourceManagerImpl implements ResourceManager {
 	public void currentResourceStatuses() {
 		LOG.info("-------------------------------------------------------------------------");
 		LOG.info("|     CONCURRENCY STATUSES ");
-		counters.keySet().stream().forEach(queue -> {
+		counters.keySet().forEach(queue -> {
 			Map<TaskType, AtomicInteger> cs = counters.get(queue);
 			StringBuilder sb = new StringBuilder("|  queue=").append(queue).append(": ");
-			cs.keySet().stream().forEach(type -> {
+			cs.keySet().forEach(type -> {
 				sb.append("(taskType=").append(type)
 					.append(", occupied=").append(cs.get(type).get()).append("/").append(maxConcurrencies.get(queue).get(type)).append(") ");
 			});

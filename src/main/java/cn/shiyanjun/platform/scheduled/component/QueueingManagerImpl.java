@@ -32,7 +32,7 @@ import cn.shiyanjun.platform.scheduled.dao.entities.Task;
 public class QueueingManagerImpl extends AbstractComponent implements QueueingManager {
 
 	private static final Log LOG = LogFactory.getLog(QueueingManagerImpl.class);
-	private final ComponentManager protocol;
+	private final ComponentManager manager;
 	private final BlockingQueue<JSONObject> queueingQueue = Queues.newLinkedBlockingQueue();
 	private volatile boolean running = true;
 	private final Thread queueingWorker;
@@ -42,9 +42,9 @@ public class QueueingManagerImpl extends AbstractComponent implements QueueingMa
 	private final TaskPersistenceService taskPersistenceService;
 	private final Set<String> queueNameSet = Sets.newHashSet();
 	
-    public QueueingManagerImpl(ComponentManager manager) {
-		super(manager.getContext());
-		this.protocol = manager;
+    public QueueingManagerImpl(ComponentManager cm) {
+		super(cm.getContext());
+		this.manager = cm;
 		queueingWorker = new QueueingWorker();
 		queueingWorker.setName("QUEUEING-WORKER");
 		jobPersistenceService = manager.getJobPersistenceService();
@@ -62,7 +62,7 @@ public class QueueingManagerImpl extends AbstractComponent implements QueueingMa
 	}
     
 	@Override
-	public void dispatch(JSONObject job) {
+	public void collect(JSONObject job) {
 		if(job != null) {
 			queueingQueue.add(job);
 		}
@@ -72,7 +72,7 @@ public class QueueingManagerImpl extends AbstractComponent implements QueueingMa
 	public void registerQueue(String queueName, int... types) {
 		if(!queueNameSet.contains(queueName)) {
 			final JobQueueingService jobQueueingService = 
-					new RedisJobQueueingService(context, queueName, protocol.getJedisPool());
+					new RedisJobQueueingService(context, queueName, manager.getJedisPool());
 			QueueingContext queueingContext = new QueueingContext(queueName);
 			queueingContext.jobQueueingService = jobQueueingService;
 			for(int type : types) {
@@ -122,30 +122,11 @@ public class QueueingManagerImpl extends AbstractComponent implements QueueingMa
 					if(job != null) {
 						int jobId = job.getIntValue(ScheduledConstants.JOB_ID);
 						int jobType = job.getIntValue(ScheduledConstants.JOB_TYPE);
-						JSONArray stages = job.getJSONArray(ScheduledConstants.STAGES);
+						
+						List<JSONObject> jsonTasks = extractTasks(job);
 						
 						List<Task> userTasks = Lists.newArrayList();
-						List<JSONObject> jsonTasks = Lists.newArrayList();
-						for (int i = 0; i < stages.size(); i++) {
-							JSONObject stage = stages.getJSONObject(i);
-							JSONArray tasks = stage.getJSONArray(ScheduledConstants.TASKS);
-							for (int j = 0; j < tasks.size(); j++) {
-								jsonTasks.add(tasks.getJSONObject(j));
-							}
-						}
-						
-						for(JSONObject jTask : jsonTasks) {
-							int taskType = jTask.getIntValue(ScheduledConstants.TASK_TYPE);
-							int serialNo = jTask.getIntValue(ScheduledConstants.SERIAL_NO);
-							String parsedExpression = jTask.getString(ScheduledConstants.PARSED_EXPRESSION);
-							Task task = new Task();
-							task.setTaskType(taskType);
-							task.setJobId(jobId);
-							task.setSerialNo(serialNo);
-							task.setParams(parsedExpression);
-							task.setStatus(TaskStatus.CREATED.getCode());
-							userTasks.add(task);
-						}
+						jsonTasks.forEach(jTask -> createAndCollectTask(jobId, userTasks, jTask));
 						
 						// insert task informations into database, with initial status: CREATED
 						taskPersistenceService.insertTasks(userTasks);
@@ -157,6 +138,33 @@ public class QueueingManagerImpl extends AbstractComponent implements QueueingMa
 					LOG.error("Failed to queueing: job=" + job, e);
 				}
 			}
+		}
+
+		private void createAndCollectTask(int jobId, List<Task> userTasks, JSONObject jTask) {
+			int taskType = jTask.getIntValue(ScheduledConstants.TASK_TYPE);
+			int serialNo = jTask.getIntValue(ScheduledConstants.SERIAL_NO);
+			String parsedExpression = jTask.getString(ScheduledConstants.PARSED_EXPRESSION);
+			Task task = new Task();
+			task.setTaskType(taskType);
+			task.setJobId(jobId);
+			task.setSerialNo(serialNo);
+			task.setParams(parsedExpression);
+			task.setStatus(TaskStatus.CREATED.getCode());
+			userTasks.add(task);
+		}
+		
+		List<JSONObject> extractTasks(JSONObject job) {
+			JSONArray stages = job.getJSONArray(ScheduledConstants.STAGES);
+			List<JSONObject> jsonTasks = Lists.newArrayList();
+			
+			for (int i = 0; i < stages.size(); i++) {
+				JSONObject stage = stages.getJSONObject(i);
+				JSONArray tasks = stage.getJSONArray(ScheduledConstants.TASKS);
+				for (int j = 0; j < tasks.size(); j++) {
+					jsonTasks.add(tasks.getJSONObject(j));
+				}
+			}
+			return jsonTasks;
 		}
 
 		private void doQueueing(int jobId, int jobType, List<Task> tasks) {
@@ -185,10 +193,10 @@ public class QueueingManagerImpl extends AbstractComponent implements QueueingMa
 			jobPersistenceService.updateJobByID(job);
 
 			// update all task  status to QUEUEING for job
-			for(Task task : tasks) {
+			tasks.forEach(task -> {
 				task.setStatus(TaskStatus.QUEUEING.getCode());
 				taskPersistenceService.updateTaskByID(task);
-			}
+			});
 		}
 	}
 	

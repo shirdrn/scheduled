@@ -7,7 +7,7 @@ import com.alibaba.fastjson.JSONObject;
 import cn.shiyanjun.platform.api.LifecycleAware;
 import cn.shiyanjun.platform.scheduled.component.QueueingManagerImpl.QueueingContext;
 
-public interface QueueingManager extends Dispatcher<JSONObject>, LifecycleAware {
+public interface QueueingManager extends JobCollector<JSONObject>, LifecycleAware {
 
 	void registerQueue(String queueName, int... jobTypes);
 	

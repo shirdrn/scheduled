@@ -78,39 +78,43 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 
 	@Override
 	public void start() {
-		// create & cache resource instances
-		ResourceUtils.registerResource(redisConfig, JedisPool.class);
+		try {
+			// create & cache resource instances
+			ResourceUtils.registerResource(redisConfig, JedisPool.class);
 
-		final DaoFactory daoFactory = DaoFactory.newInstance();
-		final SqlSessionFactory sqlSessionFactory = daoFactory.getSqlSessionFactory();
-		jobPersistenceService = new JobPersistenceServiceImpl(sqlSessionFactory);
-		taskPersistenceService = new TaskPersistenceServiceImpl(sqlSessionFactory);
+			final DaoFactory daoFactory = DaoFactory.newInstance();
+			final SqlSessionFactory sqlSessionFactory = daoFactory.getSqlSessionFactory();
+			jobPersistenceService = new JobPersistenceServiceImpl(sqlSessionFactory);
+			taskPersistenceService = new TaskPersistenceServiceImpl(sqlSessionFactory);
 
-		String taskQName = context.get(ConfigKeys.SCHEDULED_MQ_TASK_QUEUE_NAME);
-		String hbQName = context.get(ConfigKeys.SCHEDULED_MQ_HEARTBEAT_QUEUE_NAME);
-		final ConnectionFactory connectionFactory = ResourceUtils.registerAndGetResource(rabbitmqConfig, ConnectionFactory.class);
-		taskMQAccessService = new RabbitMQAccessService(taskQName, connectionFactory);
-		heartbeatMQAccessService = new RabbitMQAccessService(hbQName, connectionFactory);
-		
-		resourceMetadataManager = new ResourceManagerImpl(context);
-		queueingManager = new QueueingManagerImpl(this);
-		jobFetcher = new ScheduledJobFetcher(this);
-		schedulingPolicy = new MaxConcurrencySchedulingPolicy(this);
-		schedulingManager = new SchedulingManagerImpl(this);
-		recoveryManager = new RecoveryManagerImpl(this);
-		restManageable = new ScheduledRestExporter(this);
-		configureRestServer();
+			String taskQName = context.get(ConfigKeys.SCHEDULED_MQ_TASK_QUEUE_NAME);
+			String hbQName = context.get(ConfigKeys.SCHEDULED_MQ_HEARTBEAT_QUEUE_NAME);
+			final ConnectionFactory connectionFactory = ResourceUtils.registerAndGetResource(rabbitmqConfig, ConnectionFactory.class);
+			taskMQAccessService = new RabbitMQAccessService(taskQName, connectionFactory);
+			heartbeatMQAccessService = new RabbitMQAccessService(hbQName, connectionFactory);
+			
+			resourceMetadataManager = new ResourceManagerImpl(context);
+			queueingManager = new QueueingManagerImpl(this);
+			jobFetcher = new ScheduledJobFetcher(this);
+			schedulingPolicy = new MaxConcurrencySchedulingPolicy(this);
+			schedulingManager = new SchedulingManagerImpl(this);
+			recoveryManager = new RecoveryManagerImpl(this);
+			restManageable = new ScheduledRestExporter(this);
+			configureRestServer();
 
-		// map job types to Redis queue names
-		parseRedisQueueJobRelations();
-				
-		taskMQAccessService.start();
-		recoveryManager.start();
-		
-		jobFetcher.start();
-		schedulingManager.start();
-		queueingManager.start();
-		restServer.start();
+			// map job types to Redis queue names
+			parseRedisQueueJobRelations();
+					
+			taskMQAccessService.start();
+			recoveryManager.start();
+			
+			jobFetcher.start();
+			schedulingManager.start();
+			queueingManager.start();
+			restServer.start();
+		} catch (Exception e) {
+			stop();
+		}
 	}
 
 	private void configureRestServer() {
@@ -136,14 +140,16 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	
 	@Override
 	public void stop() {
-		schedulingManager.stop();
-		recoveryManager.stop();
-		jobFetcher.stop();
-		queueingManager.stop();
-		taskMQAccessService.stop();
-		heartbeatMQAccessService.stop();
-		restServer.stop();
-		ResourceUtils.closeAll();
+		try {
+			schedulingManager.stop();
+			recoveryManager.stop();
+			jobFetcher.stop();
+			queueingManager.stop();
+			taskMQAccessService.stop();
+			heartbeatMQAccessService.stop();
+			restServer.stop();
+			ResourceUtils.closeAll();
+		} catch (Exception e) {}
 	}
 
 	@Override

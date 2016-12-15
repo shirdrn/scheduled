@@ -108,9 +108,7 @@ public class QueueingServlet extends AbstractServlet {
 	private void jobStatuses(JSONObject res, String queue, final RestExporter restManageable) {
 		JSONArray jobStatuses = new JSONArray();
 		Map<Integer, JSONObject> jobs = restManageable.getQueuedJobStatuses(queue);
-		for(int id : jobs.keySet()) {
-			jobStatuses.add(jobs.get(id));
-		}
+		jobs.keySet().forEach(id -> jobStatuses.add(jobs.get(id)));
 		addStatusCode(res, 200);
 		addMessage(res, "SUCCESS");
 		addKV(res, "statuses", jobStatuses);
@@ -119,9 +117,7 @@ public class QueueingServlet extends AbstractServlet {
 	private void queueStatuses(JSONObject res, final RestExporter restManageable) {
 		Map<String, JSONObject> statuses = restManageable.getQueueStatuses();
 		JSONArray queueStatuses = new JSONArray();
-		for(String key : statuses.keySet()) {
-			queueStatuses.add(statuses.get(key));
-		}
+		statuses.keySet().forEach(key -> queueStatuses.add(statuses.get(key)));
 		addStatusCode(res, 200);
 		addMessage(res, "SUCCESS");
 		addKV(res, "statuses", queueStatuses);
@@ -130,9 +126,7 @@ public class QueueingServlet extends AbstractServlet {
 	private void getWaitingJobs(JSONObject res, String queue, String jobId, final RestExporter restManageable) {
 		Collection<String> jobs = restManageable.getWaitingJobs(queue, jobId);
 		JSONArray ja = new JSONArray();
-		for(String job : jobs) {
-			ja.add(JSONObject.parse(job));
-		}
+		jobs.forEach(job -> ja.add(JSONObject.parse(job)));
 		addStatusCode(res, 200);
 		addMessage(res, "SUCCESS");
 		addKV(res, "jobs", ja);

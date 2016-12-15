@@ -66,7 +66,7 @@ public class ResourceUtils {
 	}
 	
 	public static void closeAll() {
-		for(Class<?> clazz : pooledInstances.keySet()) {
+		pooledInstances.keySet().forEach(clazz -> {
 			try {
 				Object o = pooledInstances.get(clazz);
 				if(o instanceof JedisPool) {
@@ -75,7 +75,7 @@ public class ResourceUtils {
 			} catch (Exception e) {
 				// ignore it
 			}
-		}
+		});
 	}
 	
 	private static abstract class AbstractResourceBuilder {

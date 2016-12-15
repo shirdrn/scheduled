@@ -265,7 +265,7 @@ public class SchedulingManagerImpl extends AbstractComponent implements Scheduli
 		public void recoverTasks() {
 			if(isRecoveryFeatureEnabled) {
 				Map<Integer, JSONObject> jobs = manager.getRecoveryManager().getPendingTaskResponses();
-				jobs.keySet().stream().forEach(jobId -> {
+				jobs.keySet().forEach(jobId -> {
 					LOG.info("Start to recover task...");
 					JSONObject taskResponse = null;
 					try {
@@ -279,7 +279,7 @@ public class SchedulingManagerImpl extends AbstractComponent implements Scheduli
 				});
 			} else {
 				Map<Integer, JSONObject> jobs = manager.getRecoveryManager().getPendingTaskResponses();
-				jobs.keySet().stream().forEach(jobId -> {
+				jobs.keySet().forEach(jobId -> {
 					JSONObject taskResponse = null;
 					try {
 						taskResponse = jobs.get(jobId);
@@ -474,22 +474,22 @@ public class SchedulingManagerImpl extends AbstractComponent implements Scheduli
 			while(running) {
 				try {
 					// for each job in Redis queue
-					for(final String queue : queueingManager.queueNames()) {
-					    for(TaskType taskType : resourceMetadataManager.taskTypes(queue)) {
-					    	LOG.debug("Loop for: queue=" + queue + ", taskType=" + taskType);
-					    	Optional<TaskOrder> offeredTask = schedulingPolicy.offerTask(queue, taskType);
-					    	offeredTask.ifPresent(task -> {
-					    		int jobId = task.getTask().getJobId();
-					    		if(!runningJobIdToInfos.containsKey(jobId)) {
-					    			JobInfo jobInfo = new JobInfo(jobId, queue, task.getTaskCount());
-					    			jobInfo.jobStatus = JobStatus.QUEUEING;
-					    			runningJobIdToInfos.putIfAbsent(jobId, jobInfo);
-					    		}
-					    		LOG.info("Prepare to schedule: queue=" + queue + ", taskType=" + taskType + ", " + task);
-					    		scheduleTask(queue, taskType, task, runningJobIdToInfos.get(task.getTask().getJobId()));
-					    	});
-					    }
-					}
+					queueingManager.queueNames().forEach(queue -> {
+						resourceMetadataManager.taskTypes(queue).forEach(taskType -> {
+							LOG.debug("Loop for: queue=" + queue + ", taskType=" + taskType);
+							Optional<TaskOrder> offeredTask = schedulingPolicy.offerTask(queue, taskType);
+							offeredTask.ifPresent(task -> {
+								int jobId = task.getTask().getJobId();
+								if(!runningJobIdToInfos.containsKey(jobId)) {
+									JobInfo jobInfo = new JobInfo(jobId, queue, task.getTaskCount());
+									jobInfo.jobStatus = JobStatus.QUEUEING;
+									runningJobIdToInfos.putIfAbsent(jobId, jobInfo);
+								}
+								LOG.info("Prepare to schedule: queue=" + queue + ", taskType=" + taskType + ", " + task);
+								scheduleTask(queue, taskType, task, runningJobIdToInfos.get(task.getTask().getJobId()));
+							});
+						});
+					});
 					Thread.sleep(scheduleTaskIntervalMillis);
 				} catch (Exception e) {
 					LOG.warn("Fail to schedule task: ", e);
@@ -1080,7 +1080,7 @@ public class SchedulingManagerImpl extends AbstractComponent implements Scheduli
 		}
 	}
 	
-	protected class JobInfo {
+	class JobInfo {
 		
 		final int jobId;
 		final String queue;
@@ -1120,7 +1120,7 @@ public class SchedulingManagerImpl extends AbstractComponent implements Scheduli
 		}
 	}
 	
-	protected class TaskID {
+	class TaskID {
 		
 		final int jobId;
 		final int taskId;
@@ -1162,7 +1162,7 @@ public class SchedulingManagerImpl extends AbstractComponent implements Scheduli
 		
 	}
 	
-	protected class TaskInfo extends TaskID {
+	class TaskInfo extends TaskID {
 		
 		long scheduledTime;
 		volatile long lastUpdatedTime;

@@ -103,10 +103,10 @@ public class RecoveryManagerImpl implements RecoveryManager {
 	//     Job : QUEUEING -> SCHEDULED -> RUNNING -> SUCCEEDED/FAILED
 	//     Task: WAIT_TO_BE_SCHEDULED -> SCHEDULED -> RUNNING -> SUCCEEDED/FAILED
 	private void recoverRedisStates() {
-		for(String queue : queueingManager.queueNames()) {
+		queueingManager.queueNames().forEach(queue -> {
 			JobQueueingService qs = queueingManager.getQueueingContext(queue).getJobQueueingService();
 			Set<String> jobs = qs.getJobs();
-			for(String strJob : jobs) {
+			jobs.forEach(strJob -> {
 				JSONObject job = JSONObject.parseObject(strJob);
 				int jobId = job.getIntValue(ScheduledConstants.JOB_ID);
 				String strJobStatus = job.getString(ScheduledConstants.JOB_STATUS);
@@ -122,8 +122,8 @@ public class RecoveryManagerImpl implements RecoveryManager {
 					qs.remove(String.valueOf(jobId));
 					LOG.info("Job in Redis removed: " + job);
 				}
-			}
-		}
+			});
+		});
 	}
 
 	@Override
@@ -134,8 +134,8 @@ public class RecoveryManagerImpl implements RecoveryManager {
 	private void processPendingTaskResponses() {
 		Set<Integer> completedJobIds = Sets.newHashSet();
 		// Map<jobId, Map<taskId, List<JSONObject>>>
-		Map<Integer, Map<Integer, List<JSONObject>>> jobs = Maps.newLinkedHashMap(); 
-		for(JSONObject jobData : needRecoveredTaskQueue) {
+		Map<Integer, Map<Integer, List<JSONObject>>> jobs = Maps.newLinkedHashMap();
+		needRecoveredTaskQueue.forEach(jobData -> {
 			JSONArray tasks = jobData.getJSONArray(ScheduledConstants.TASKS);
 			if(tasks != null && !tasks.isEmpty()) {
 				for (int i = 0; i < tasks.size(); i++) {
@@ -181,10 +181,10 @@ public class RecoveryManagerImpl implements RecoveryManager {
 					}
 				}
 			}
-		}
+		});
 		LOG.info("Completed jobs: " + completedJobIds);
 		
-		for(int jobId : jobs.keySet()) {
+		jobs.keySet().forEach(jobId -> {
 			Map<Integer, List<JSONObject>> taskMap = jobs.get(jobId);
 			if(taskMap.size() == 1) {
 				// just one task for the job, choose it as the last arrived task response
@@ -201,7 +201,7 @@ public class RecoveryManagerImpl implements RecoveryManager {
 				List<JSONObject> taskResponseList = taskMap.get(lastTaskId);
 				processedPendingRecoveryJobs.put(jobId, taskResponseList.get(taskResponseList.size() - 1));
 			}
-		}
+		});
 		
 		// add flag 'needRecovering' to each tenured task response
 		processedPendingRecoveryJobs.values().stream().forEach(taskResponse -> {

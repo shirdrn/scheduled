@@ -64,10 +64,10 @@ public class ScheduledRestExporter implements RestExporter {
 		 Map<Integer, JSONObject> statuses = Maps.newHashMap();
 		JobQueueingService queueingService = getQueueingService(queue);
 		Set<String> jobs = queueingService.getJobs();
-		for(String job : jobs) {
+		jobs.forEach(job -> {
 			JSONObject detail = JSONObject.parseObject(job);
 			statuses.put(detail.getIntValue(ScheduledConstants.JOB_ID), detail);
-		}
+		});
 		return statuses;
 	}
 
@@ -75,12 +75,12 @@ public class ScheduledRestExporter implements RestExporter {
 	public Map<String, JSONObject> getQueueStatuses() {
 		Map<String, JSONObject> statuses = Maps.newHashMap();
 		Set<String> queues = manager.getQueueingManager().queueNames();
-		for(String queue : queues) {
+		queues.forEach(queue -> {
 			Map<Integer, JSONObject> jobs = getQueuedJobStatuses(queue);
 			JSONObject status = new JSONObject();
 			status.put(queue, jobs.size());
 			statuses.put(queue, status);
-		}
+		});
 		return statuses;
 	}
 
