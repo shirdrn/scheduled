@@ -7,7 +7,7 @@ import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 
 import cn.shiyanjun.platform.api.constants.JobStatus;
-import cn.shiyanjun.platform.scheduled.common.JobPersistenceService;
+import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
 import cn.shiyanjun.platform.scheduled.dao.entities.Job;
 import cn.shiyanjun.platform.scheduled.dao.mappers.JobMapper;
 

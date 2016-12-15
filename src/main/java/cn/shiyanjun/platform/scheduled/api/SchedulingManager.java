@@ -1,4 +1,4 @@
-package cn.shiyanjun.platform.scheduled.common;
+package cn.shiyanjun.platform.scheduled.api;
 
 import cn.shiyanjun.platform.api.LifecycleAware;
 

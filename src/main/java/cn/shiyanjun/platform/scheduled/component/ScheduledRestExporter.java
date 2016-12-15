@@ -10,19 +10,25 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 
 import cn.shiyanjun.platform.api.constants.JobStatus;
-import cn.shiyanjun.platform.scheduled.common.JobQueueingService;
-import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
-import cn.shiyanjun.platform.scheduled.common.RestManageable;
-import cn.shiyanjun.platform.scheduled.component.DefaultQueueingManager.QueueingContext;
+import cn.shiyanjun.platform.api.constants.TaskType;
+import cn.shiyanjun.platform.scheduled.api.ComponentManager;
+import cn.shiyanjun.platform.scheduled.api.JobQueueingService;
+import cn.shiyanjun.platform.scheduled.api.RestExporter;
+import cn.shiyanjun.platform.scheduled.component.QueueingManagerImpl.QueueingContext;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 
-public class RestManagementExporter implements RestManageable {
+public class ScheduledRestExporter implements RestExporter {
 
-	private final GlobalResourceManager manager;
+	private final ComponentManager manager;
 	
-	public RestManagementExporter(GlobalResourceManager manager) {
+	public ScheduledRestExporter(ComponentManager manager) {
 		super();
 		this.manager = manager;
+	}
+	
+	@Override
+	public Set<String> queueingNames() {
+		return manager.getQueueingManager().queueNames();
 	}
 	
 	private JobQueueingService getQueueingService(String queue) {
@@ -77,5 +83,21 @@ public class RestManagementExporter implements RestManageable {
 		}
 		return statuses;
 	}
+
+	@Override
+	public void updateResourceAmount(String queue, TaskType taskType, int amount) {
+		manager.getResourceManager().updateResourceAmount(queue, taskType, amount);		
+	}
+
+	@Override
+	public void setSchedulingOpened(boolean isSchedulingOpened) {
+		manager.getJobFetcher().setSchedulingOpened(isSchedulingOpened);
+	}
+
+	@Override
+	public boolean isSchedulingOpened() {
+		return manager.getJobFetcher().isSchedulingOpened();
+	}
+
 
 }

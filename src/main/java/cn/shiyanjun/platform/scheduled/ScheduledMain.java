@@ -13,40 +13,46 @@ import cn.shiyanjun.platform.api.Context;
 import cn.shiyanjun.platform.api.LifecycleAware;
 import cn.shiyanjun.platform.api.common.AbstractComponent;
 import cn.shiyanjun.platform.api.common.ContextImpl;
-import cn.shiyanjun.platform.scheduled.common.JobPersistenceService;
-import cn.shiyanjun.platform.scheduled.common.MQAccessService;
-import cn.shiyanjun.platform.scheduled.common.QueueingManager;
-import cn.shiyanjun.platform.scheduled.common.RecoveryManager;
-import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
-import cn.shiyanjun.platform.scheduled.common.ResourceManager;
-import cn.shiyanjun.platform.scheduled.common.RestManageable;
-import cn.shiyanjun.platform.scheduled.common.SchedulingManager;
-import cn.shiyanjun.platform.scheduled.common.SchedulingStrategy;
-import cn.shiyanjun.platform.scheduled.common.TaskPersistenceService;
-import cn.shiyanjun.platform.scheduled.component.DefaultQueueingManager;
-import cn.shiyanjun.platform.scheduled.component.DefaultRecoveryManager;
-import cn.shiyanjun.platform.scheduled.component.DefaultSchedulingManager;
+import cn.shiyanjun.platform.scheduled.api.ComponentManager;
+import cn.shiyanjun.platform.scheduled.api.JobFetcher;
+import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
+import cn.shiyanjun.platform.scheduled.api.MQAccessService;
+import cn.shiyanjun.platform.scheduled.api.QueueingManager;
+import cn.shiyanjun.platform.scheduled.api.RecoveryManager;
+import cn.shiyanjun.platform.scheduled.api.ResourceManager;
+import cn.shiyanjun.platform.scheduled.api.RestExporter;
+import cn.shiyanjun.platform.scheduled.api.RestServer;
+import cn.shiyanjun.platform.scheduled.api.SchedulingManager;
+import cn.shiyanjun.platform.scheduled.api.SchedulingPolicy;
+import cn.shiyanjun.platform.scheduled.api.TaskPersistenceService;
+import cn.shiyanjun.platform.scheduled.component.QueueingManagerImpl;
+import cn.shiyanjun.platform.scheduled.component.RecoveryManagerImpl;
+import cn.shiyanjun.platform.scheduled.component.SchedulingManagerImpl;
 import cn.shiyanjun.platform.scheduled.component.JobPersistenceServiceImpl;
-import cn.shiyanjun.platform.scheduled.component.MaxConcurrencySchedulingStrategy;
+import cn.shiyanjun.platform.scheduled.component.MaxConcurrencySchedulingPolicy;
 import cn.shiyanjun.platform.scheduled.component.RabbitMQAccessService;
-import cn.shiyanjun.platform.scheduled.component.ResourceMetadataManagerImpl;
-import cn.shiyanjun.platform.scheduled.component.RestManagementExporter;
+import cn.shiyanjun.platform.scheduled.component.ResourceManagerImpl;
 import cn.shiyanjun.platform.scheduled.component.ScheduledJobFetcher;
+import cn.shiyanjun.platform.scheduled.component.ScheduledRestExporter;
+import cn.shiyanjun.platform.scheduled.component.ScheduledRestServer;
 import cn.shiyanjun.platform.scheduled.component.TaskPersistenceServiceImpl;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 import cn.shiyanjun.platform.scheduled.dao.DaoFactory;
+import cn.shiyanjun.platform.scheduled.rest.QueueingServlet;
+import cn.shiyanjun.platform.scheduled.rest.ResourceServlet;
+import cn.shiyanjun.platform.scheduled.rest.SchedulingServlet;
 import cn.shiyanjun.platform.scheduled.utils.ConfigUtils;
 import cn.shiyanjun.platform.scheduled.utils.ResourceUtils;
 import redis.clients.jedis.JedisPool;
 
-public final class ScheduledMain extends AbstractComponent implements LifecycleAware, GlobalResourceManager {
+public final class ScheduledMain extends AbstractComponent implements LifecycleAware, ComponentManager {
 
 	private static final Log LOG = LogFactory.getLog(ScheduledMain.class);
 	private final String queueingConfig = "queueings.properties";
 	private final String redisConfig = "redis.properties";
 	private final String rabbitmqConfig = "rabbitmq.properties";
 	private final String platformId;
-	private LifecycleAware scheduledJobFetcher;
+	private JobFetcher jobFetcher;
 	private RecoveryManager recoveryManager;
 	private QueueingManager queueingManager;
 	private SchedulingManager schedulingManager;
@@ -54,9 +60,10 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	private TaskPersistenceService taskPersistenceService;
 	private MQAccessService taskMQAccessService;
 	private MQAccessService heartbeatMQAccessService;
-	private SchedulingStrategy schedulingStrategy;
+	private SchedulingPolicy schedulingPolicy;
 	private ResourceManager resourceMetadataManager;
-	private RestManageable restManageable;
+	private RestExporter restManageable;
+	private RestServer restServer;
 	
 	public ScheduledMain(final Context context) {
 		super(context);
@@ -85,13 +92,14 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 		taskMQAccessService = new RabbitMQAccessService(taskQName, connectionFactory);
 		heartbeatMQAccessService = new RabbitMQAccessService(hbQName, connectionFactory);
 		
-		resourceMetadataManager = new ResourceMetadataManagerImpl(context);
-		queueingManager = new DefaultQueueingManager(this);
-		scheduledJobFetcher = new ScheduledJobFetcher(this);
-		schedulingStrategy = new MaxConcurrencySchedulingStrategy(this);
-		schedulingManager = new DefaultSchedulingManager(this);
-		recoveryManager = new DefaultRecoveryManager(this);
-		restManageable = new RestManagementExporter(this);
+		resourceMetadataManager = new ResourceManagerImpl(context);
+		queueingManager = new QueueingManagerImpl(this);
+		jobFetcher = new ScheduledJobFetcher(this);
+		schedulingPolicy = new MaxConcurrencySchedulingPolicy(this);
+		schedulingManager = new SchedulingManagerImpl(this);
+		recoveryManager = new RecoveryManagerImpl(this);
+		restManageable = new ScheduledRestExporter(this);
+		configureRestServer();
 
 		// map job types to Redis queue names
 		parseRedisQueueJobRelations();
@@ -99,9 +107,17 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 		taskMQAccessService.start();
 		recoveryManager.start();
 		
-		scheduledJobFetcher.start();
+		jobFetcher.start();
 		schedulingManager.start();
 		queueingManager.start();
+		restServer.start();
+	}
+
+	private void configureRestServer() {
+		restServer = new ScheduledRestServer(this);
+		restServer.register("/admin/resource", ResourceServlet.class);
+		restServer.register("/admin/queueing", QueueingServlet.class);
+		restServer.register("/admin/scheduling", SchedulingServlet.class);
 	}
 	
 	private void parseRedisQueueJobRelations() {
@@ -122,15 +138,16 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	public void stop() {
 		schedulingManager.stop();
 		recoveryManager.stop();
-		scheduledJobFetcher.stop();
+		jobFetcher.stop();
 		queueingManager.stop();
 		taskMQAccessService.stop();
 		heartbeatMQAccessService.stop();
+		restServer.stop();
 		ResourceUtils.closeAll();
 	}
 
 	@Override
-	public ResourceManager getResourceMetadataManager() {
+	public ResourceManager getResourceManager() {
 		return resourceMetadataManager;
 	}
 
@@ -140,8 +157,8 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	}
 
 	@Override
-	public SchedulingStrategy getSchedulingStrategy() {
-		return schedulingStrategy;
+	public SchedulingPolicy getSchedulingPolicy() {
+		return schedulingPolicy;
 	}
 
 	@Override
@@ -175,13 +192,18 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	}
 	
 	@Override
-	public RestManageable getRestManageable() {
+	public RestExporter getRestExporter() {
 		return restManageable;
 	}
 	
 	@Override
 	public RecoveryManager getRecoveryManager() {
 		return recoveryManager;
+	}
+	
+	@Override
+	public JobFetcher getJobFetcher() {
+		return jobFetcher;
 	}
 	
 	public static void main(String[] args) {

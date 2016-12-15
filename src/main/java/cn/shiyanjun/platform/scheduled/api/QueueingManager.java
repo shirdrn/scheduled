@@ -1,11 +1,11 @@
-package cn.shiyanjun.platform.scheduled.common;
+package cn.shiyanjun.platform.scheduled.api;
 
 import java.util.Set;
 
 import com.alibaba.fastjson.JSONObject;
 
 import cn.shiyanjun.platform.api.LifecycleAware;
-import cn.shiyanjun.platform.scheduled.component.DefaultQueueingManager.QueueingContext;
+import cn.shiyanjun.platform.scheduled.component.QueueingManagerImpl.QueueingContext;
 
 public interface QueueingManager extends Dispatcher<JSONObject>, LifecycleAware {
 

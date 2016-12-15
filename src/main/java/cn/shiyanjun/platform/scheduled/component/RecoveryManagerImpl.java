@@ -24,24 +24,24 @@ import cn.shiyanjun.platform.api.constants.JSONKeys;
 import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.constants.TaskStatus;
 import cn.shiyanjun.platform.api.utils.Time;
-import cn.shiyanjun.platform.scheduled.common.JobPersistenceService;
-import cn.shiyanjun.platform.scheduled.common.JobQueueingService;
-import cn.shiyanjun.platform.scheduled.common.QueueingManager;
-import cn.shiyanjun.platform.scheduled.common.RecoveryManager;
-import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
+import cn.shiyanjun.platform.scheduled.api.ComponentManager;
+import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
+import cn.shiyanjun.platform.scheduled.api.JobQueueingService;
+import cn.shiyanjun.platform.scheduled.api.QueueingManager;
+import cn.shiyanjun.platform.scheduled.api.RecoveryManager;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 import cn.shiyanjun.platform.scheduled.dao.entities.Job;
 
-public class DefaultRecoveryManager implements RecoveryManager {
+public class RecoveryManagerImpl implements RecoveryManager {
 
-	private static final Log LOG = LogFactory.getLog(DefaultRecoveryManager.class);
-	private final GlobalResourceManager manager;
+	private static final Log LOG = LogFactory.getLog(RecoveryManagerImpl.class);
+	private final ComponentManager manager;
 	private final JobPersistenceService jobPersistenceService;
 	private final QueueingManager queueingManager;
 	private final BlockingQueue<JSONObject> needRecoveredTaskQueue = Queues.newLinkedBlockingQueue();
 	private final Map<Integer, JSONObject> processedPendingRecoveryJobs = Maps.newHashMap();
 
-	public DefaultRecoveryManager(GlobalResourceManager manager) {
+	public RecoveryManagerImpl(ComponentManager manager) {
 		super();
 		this.manager = manager;
 		jobPersistenceService = manager.getJobPersistenceService();

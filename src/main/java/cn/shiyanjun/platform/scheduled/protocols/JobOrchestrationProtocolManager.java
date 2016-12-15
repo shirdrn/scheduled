@@ -14,8 +14,8 @@ import com.squareup.okhttp.RequestBody;
 import com.squareup.okhttp.Response;
 
 import cn.shiyanjun.platform.api.Context;
+import cn.shiyanjun.platform.scheduled.api.Protocol;
 import cn.shiyanjun.platform.scheduled.common.AbstractProtocolManager;
-import cn.shiyanjun.platform.scheduled.common.Protocol;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 import cn.shiyanjun.platform.scheduled.protocols.JobOrchestrationProtocolManager.RESTRequest;
 

@@ -8,7 +8,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Sets;
 
 import cn.shiyanjun.platform.api.Context;
-import cn.shiyanjun.platform.scheduled.common.JobQueueingService;
+import cn.shiyanjun.platform.scheduled.api.JobQueueingService;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 import redis.clients.jedis.Jedis;
@@ -16,13 +16,13 @@ import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.Transaction;
 import redis.clients.jedis.Tuple;
 
-public class JobRedisQueueingService implements JobQueueingService {
+public class RedisJobQueueingService implements JobQueueingService {
 
 	private final String queue;
 	private final JedisPool jedisPool;
 	private final int redisDBIndex;
 	
-    public JobRedisQueueingService(Context context, String queue, JedisPool jedisPool) {
+    public RedisJobQueueingService(Context context, String queue, JedisPool jedisPool) {
 		super();
 		Preconditions.checkNotNull(queue);
 		this.queue = queue;

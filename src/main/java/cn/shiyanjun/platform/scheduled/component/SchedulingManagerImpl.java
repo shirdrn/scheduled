@@ -38,18 +38,18 @@ import cn.shiyanjun.platform.api.constants.TaskStatus;
 import cn.shiyanjun.platform.api.constants.TaskType;
 import cn.shiyanjun.platform.api.utils.NamedThreadFactory;
 import cn.shiyanjun.platform.api.utils.Time;
+import cn.shiyanjun.platform.scheduled.api.ComponentManager;
+import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
+import cn.shiyanjun.platform.scheduled.api.JobQueueingService;
+import cn.shiyanjun.platform.scheduled.api.MQAccessService;
+import cn.shiyanjun.platform.scheduled.api.QueueingManager;
+import cn.shiyanjun.platform.scheduled.api.ResourceManager;
+import cn.shiyanjun.platform.scheduled.api.SchedulingManager;
+import cn.shiyanjun.platform.scheduled.api.SchedulingPolicy;
+import cn.shiyanjun.platform.scheduled.api.TaskPersistenceService;
 import cn.shiyanjun.platform.scheduled.common.AbstractRunnableConsumer;
-import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
-import cn.shiyanjun.platform.scheduled.common.JobPersistenceService;
-import cn.shiyanjun.platform.scheduled.common.JobQueueingService;
-import cn.shiyanjun.platform.scheduled.common.MQAccessService;
-import cn.shiyanjun.platform.scheduled.common.QueueingManager;
-import cn.shiyanjun.platform.scheduled.common.ResourceManager;
 import cn.shiyanjun.platform.scheduled.common.TaskOrder;
-import cn.shiyanjun.platform.scheduled.common.SchedulingManager;
-import cn.shiyanjun.platform.scheduled.common.SchedulingStrategy;
-import cn.shiyanjun.platform.scheduled.common.TaskPersistenceService;
-import cn.shiyanjun.platform.scheduled.component.DefaultQueueingManager.QueueingContext;
+import cn.shiyanjun.platform.scheduled.component.QueueingManagerImpl.QueueingContext;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 import cn.shiyanjun.platform.scheduled.dao.entities.Job;
@@ -66,10 +66,10 @@ import cn.shiyanjun.platform.scheduled.dao.entities.Task;
  * </ol>
  * @author yanjun
  */
-public class DefaultSchedulingManager extends AbstractComponent implements SchedulingManager {
+public class SchedulingManagerImpl extends AbstractComponent implements SchedulingManager {
 
-	private static final Log LOG = LogFactory.getLog(DefaultSchedulingManager.class);
-	protected final GlobalResourceManager manager;
+	private static final Log LOG = LogFactory.getLog(SchedulingManagerImpl.class);
+	protected final ComponentManager manager;
 	protected final QueueingManager queueingManager;
 	private ExecutorService executorService;
 	private ScheduledExecutorService scheduledExecutorService;
@@ -82,27 +82,27 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 	protected final ConcurrentMap<Integer, LinkedList<TaskID>> runningJobToTaskList = Maps.newConcurrentMap();
 	protected final ConcurrentMap<TaskID, TaskInfo> runningTaskIdToInfos = Maps.newConcurrentMap();
 	private final ConcurrentMap<Integer, JobInfo> completedJobIdToInfos = Maps.newConcurrentMap();
-	private final SchedulingStrategy schedulingStrategy;
+	private final SchedulingPolicy schedulingPolicy;
 	private final ResourceManager resourceMetadataManager;
 	private final FreshTasksResponseProcessingManager freshTasksResponseProcessingManager;
-	private final BlockingQueue<HeartbeatHolder> rawHeartbeatMessages = Queues.newLinkedBlockingQueue();
+	private final BlockingQueue<Heartbeat> rawHeartbeatMessages = Queues.newLinkedBlockingQueue();
 	private final StaleJobChecker staleJobChecker;
 	
 	private final int keptHistoryJobMaxCount;
-	private final TasksResponseHandler<HeartbeatHolder> tenuredInflightTasksResponseHandler = new TenuredInflightTaskResponseHandler();
+	private final TasksResponseHandler<Heartbeat> tenuredInflightTasksResponseHandler = new TenuredInflightTaskResponseHandler();
 	private final TasksResponseHandler<JSONObject> tenuredInMQTasksResponseHandler = new TenuredInMQTaskResponseHandler();
 	private final HeartbeatHandlingController taskResponseHandlingController;
 
-	public DefaultSchedulingManager(GlobalResourceManager manager) {
+	public SchedulingManagerImpl(ComponentManager manager) {
 		super(manager.getContext());
 		this.manager = manager;
 		queueingManager = this.manager.getQueueingManager();
 		taskPersistenceService = this.manager.getTaskPersistenceService();
 		taskMQAccessService = this.manager.getTaskMQAccessService();
 		heartbeatMQAccessService = this.manager.getHeartbeatMQAccessService();
- 		schedulingStrategy = this.manager.getSchedulingStrategy();
+ 		schedulingPolicy = this.manager.getSchedulingPolicy();
 		jobPersistenceService = manager.getJobPersistenceService();
-		resourceMetadataManager = manager.getResourceMetadataManager();
+		resourceMetadataManager = manager.getResourceManager();
 		freshTasksResponseProcessingManager = new FreshTasksResponseProcessingManager();
 		staleJobChecker = new StaleJobChecker(this);
 		taskResponseHandlingController = new SimpleTaskResponseHandlingController(context);
@@ -152,7 +152,7 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 		public void run() {
 			while(running) {
 				try {
-					HeartbeatHolder rawTasksResponse = rawHeartbeatMessages.take();
+					Heartbeat rawTasksResponse = rawHeartbeatMessages.take();
 					if(taskResponseHandlingController.isTenuredTasksResponse(rawTasksResponse.heartbeatMessage)) {
 						LOG.info("Dispatching tenured tasks response: " + rawTasksResponse);
 						taskResponseHandlingController.processTenuredTasksResponse(rawTasksResponse);
@@ -180,14 +180,14 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 	 */
 	private final class FreshTasksResponseProcessingManager implements Runnable {
 		
-		private final BlockingQueue<HeartbeatHolder> tasksResponseMessageQueue = Queues.newLinkedBlockingQueue();
-		private final TasksResponseHandler<HeartbeatHolder> handler = new FreshHeartbeatHolderHandler();
+		private final BlockingQueue<Heartbeat> tasksResponseMessageQueue = Queues.newLinkedBlockingQueue();
+		private final TasksResponseHandler<Heartbeat> handler = new FreshHeartbeatHandler();
 		
 		@Override
 		public void run() {
 			while(running) {
 				try {
-					HeartbeatHolder tasksResponse = tasksResponseMessageQueue.take();
+					Heartbeat tasksResponse = tasksResponseMessageQueue.take();
 					LOG.info("Takes a fresh tasks response: " + tasksResponse.heartbeatMessage);
 					handler.handle(tasksResponse);
 				} catch (Exception e) {
@@ -214,7 +214,7 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 		try {
 			qs.remove(String.valueOf(jobId));
 		} catch (Exception e) {
-			LOG.warn("Fail to remove job from Redis.", e);
+			LOG.warn("Fail to remove job from Redis: ", e);
 			return false;
 		}
 		return true;
@@ -226,8 +226,8 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 		
 		boolean isTenuredTasksResponse(JSONObject tasksResponse);
 		boolean isValid(JSONObject tasksResponse);
-		void processTenuredTasksResponse(HeartbeatHolder holder);
-		void processFreshTasksResponse(HeartbeatHolder holder);
+		void processTenuredTasksResponse(Heartbeat hb);
+		void processFreshTasksResponse(Heartbeat hb);
 		void recoverTaskInMemoryStructures(JSONObject taskResponse) throws Exception;
 		
 		void releaseResource(final String queue, TaskType taskType);
@@ -343,13 +343,13 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 		}
 		
 		@Override
-		public void processTenuredTasksResponse(HeartbeatHolder tasksResponseHolder) {
-			JSONObject tasksResponse = tasksResponseHolder.heartbeatMessage;
-			JSONArray tasks = tasksResponseHolder.heartbeatMessage.getJSONArray(ScheduledConstants.TASKS);
+		public void processTenuredTasksResponse(Heartbeat hb) {
+			JSONObject tasksResponse = hb.heartbeatMessage;
+			JSONArray tasks = hb.heartbeatMessage.getJSONArray(ScheduledConstants.TASKS);
 			if(tasks != null) {
 				if(isRecoveryFeatureEnabled) {
 					if(isTenuredInflightTasksResponse(tasksResponse)) {
-						tenuredInflightTasksResponseHandler.handle(tasksResponseHolder);
+						tenuredInflightTasksResponseHandler.handle(hb);
 					} else {
 						// tenured in MQ tasks response
 						tenuredInMQTasksResponseHandler.handle(tasksResponse);
@@ -383,8 +383,8 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 		}
 		
 		@Override
-		public void processFreshTasksResponse(HeartbeatHolder tasksResponseHolder) {
-			freshTasksResponseProcessingManager.tasksResponseMessageQueue.add(tasksResponseHolder);
+		public void processFreshTasksResponse(Heartbeat hb) {
+			freshTasksResponseProcessingManager.tasksResponseMessageQueue.add(hb);
 		}
 		
 		// after reboot scheduling platform, maybe some tasks result from running platform are not processed in time.
@@ -477,7 +477,7 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 					for(final String queue : queueingManager.queueNames()) {
 					    for(TaskType taskType : resourceMetadataManager.taskTypes(queue)) {
 					    	LOG.debug("Loop for: queue=" + queue + ", taskType=" + taskType);
-					    	Optional<TaskOrder> offeredTask = schedulingStrategy.offerTask(queue, taskType);
+					    	Optional<TaskOrder> offeredTask = schedulingPolicy.offerTask(queue, taskType);
 					    	offeredTask.ifPresent(task -> {
 					    		int jobId = task.getTask().getJobId();
 					    		if(!runningJobIdToInfos.containsKey(jobId)) {
@@ -615,16 +615,16 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 		void handle(final T tasksResponse);
 	}
 	
-	private final class FreshHeartbeatHolderHandler implements TasksResponseHandler<HeartbeatHolder> {
+	private final class FreshHeartbeatHandler implements TasksResponseHandler<Heartbeat> {
 
 		@Override
-		public void handle(final HeartbeatHolder holder) {
-			LOG.info("Prepare to handle heartbeat: " + holder);
-			JSONArray tasks = holder.heartbeatMessage.getJSONArray(ScheduledConstants.TASKS);
-			String platformId = holder.heartbeatMessage.getString(ScheduledConstants.PLATFORM_ID);
-			boolean isTenuredTasksResponse = taskResponseHandlingController.isTenuredTasksResponse(holder.heartbeatMessage);
-			final Channel channel = holder.channel;
-			long deliveryTag = holder.deliveryTag;
+		public void handle(final Heartbeat hb) {
+			LOG.info("Prepare to handle heartbeat: " + hb);
+			JSONArray tasks = hb.heartbeatMessage.getJSONArray(ScheduledConstants.TASKS);
+			String platformId = hb.heartbeatMessage.getString(ScheduledConstants.PLATFORM_ID);
+			boolean isTenuredTasksResponse = taskResponseHandlingController.isTenuredTasksResponse(hb.heartbeatMessage);
+			final Channel channel = hb.channel;
+			long deliveryTag = hb.deliveryTag;
 			for (int i = 0; i < tasks.size(); i++) {
 				JSONObject taskResponse = (JSONObject) tasks.get(i);
 				// read heartbeat message contents
@@ -674,7 +674,7 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 								
 								for (int i = 0; i < 3; i++) {
 									try {
-										processTaskResult(jobInfo, id, newTaskStatus, taskResponse, isTenuredTasksResponse);
+										processTaskResponse(jobInfo, id, newTaskStatus, taskResponse, isTenuredTasksResponse);
 										break;
 									} catch (Exception e) {
 										LOG.warn("Fail to process task result: ", e);
@@ -697,7 +697,7 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 			}
 		}
 		
-		private void processTaskResult(JobInfo jobInfo, final TaskID id, TaskStatus taskStatus, JSONObject taskResponse, boolean isTenuredTasksResponse) throws Exception {
+		private void processTaskResponse(JobInfo jobInfo, final TaskID id, TaskStatus taskStatus, JSONObject taskResponse, boolean isTenuredTasksResponse) throws Exception {
 			LOG.debug("Process task result: " + taskResponse);
 			final String queue = jobInfo.queue;
 			switch(taskStatus) {
@@ -746,10 +746,10 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 	 * 
 	 * @author yanjun
 	 */
-	private final class TenuredInflightTaskResponseHandler implements TasksResponseHandler<HeartbeatHolder> {
+	private final class TenuredInflightTaskResponseHandler implements TasksResponseHandler<Heartbeat> {
 
 		@Override
-		public void handle(HeartbeatHolder taskResponse) {
+		public void handle(Heartbeat taskResponse) {
 			freshTasksResponseProcessingManager.handler.handle(taskResponse);
 		}
 		
@@ -770,8 +770,8 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 			JSONArray tasks = new JSONArray();
 			tasks.add(tasksResponse);
 			response.put(ScheduledConstants.TASKS, tasks);
-			HeartbeatHolder holder = new HeartbeatHolder(response);
-			freshTasksResponseProcessingManager.handler.handle(holder);
+			Heartbeat hb = new Heartbeat(response);
+			freshTasksResponseProcessingManager.handler.handle(hb);
 		}
 		
 	}
@@ -806,15 +806,6 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 		}
 	}
 	
-	private void updateTaskStatusWithoutTime(int jobId, int taskId, int serialNo, TaskStatus taskStatus) {
-		Task task = new Task();
-		task.setId(taskId);
-		task.setStatus(taskStatus.getCode());
-		taskPersistenceService.updateTaskByID(task);
-		LOG.info("In-db task state changed: jobId=" +
-				jobId + ", taskId=" + taskId + ", serialNo=" + serialNo + ", taskStatus=" + taskStatus);
-	}
-	
 	void updateTaskInfo(int jobId, int taskId, TaskStatus taskStatus) {
 		Timestamp updateTime = new Timestamp(Time.now());
 		Task userTask = new Task();
@@ -839,6 +830,15 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 		taskPersistenceService.updateTaskByID(task);
 		LOG.info("In-db task state changed: jobId=" + jobId + ", taskId=" + taskId + ", serialNo=" + serialNo + 
 				", updateTime=" + updateTime + ", taskStatus=" + taskStatus);
+	}
+	
+	private void updateTaskStatusWithoutTime(int jobId, int taskId, int serialNo, TaskStatus taskStatus) {
+		Task task = new Task();
+		task.setId(taskId);
+		task.setStatus(taskStatus.getCode());
+		taskPersistenceService.updateTaskByID(task);
+		LOG.info("In-db task state changed: jobId=" +
+				jobId + ", taskId=" + taskId + ", serialNo=" + serialNo + ", taskStatus=" + taskStatus);
 	}
 	
 	private void updateStartedTask(int jobId, int taskId, int serialNo, TaskStatus taskStatus) {
@@ -1020,16 +1020,16 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 							switch(type) {
 								case ScheduledConstants.HEARTBEAT_TYPE_TASK_PROGRESS:
 									if(taskResponseHandlingController.isValid(heartbeatMessage)) {
-										HeartbeatHolder heartbeat = new HeartbeatHolder(getChannel(), heartbeatMessage, deliveryTag);
-										rawHeartbeatMessages.add(heartbeat);
-										LOG.info("Added to rawHeartbeatMessages: " + heartbeat);
+										Heartbeat hb = new Heartbeat(getChannel(), heartbeatMessage, deliveryTag);
+										rawHeartbeatMessages.add(hb);
+										LOG.info("Added to rawHeartbeatMessages: " + hb);
 									} else {
 										LOG.warn("Invalid tasks response: " + heartbeatMessage);
 										sendAck(getChannel(), deliveryTag);
 									}
 									break;
 								default:
-									LOG.warn("Unknown result: type=" + type + ", result=" + heartbeatMessage);
+									LOG.warn("Unknown heartbeat: type=" + type + ", heartbeat=" + heartbeatMessage);
 							}
 					} else {
 						// Ack unknown message
@@ -1056,18 +1056,18 @@ public class DefaultSchedulingManager extends AbstractComponent implements Sched
 		return true;
 	}
 	
-	private class HeartbeatHolder {
+	private class Heartbeat {
 		
 		Channel channel;
 		final JSONObject heartbeatMessage;
 		long deliveryTag;
 		
-		public HeartbeatHolder(JSONObject heartbeatMessage) {
+		public Heartbeat(JSONObject heartbeatMessage) {
 			super();
 			this.heartbeatMessage = heartbeatMessage;
 		}
 		
-		public HeartbeatHolder(Channel channel, JSONObject heartbeat, long deliveryTag) {
+		public Heartbeat(Channel channel, JSONObject heartbeat, long deliveryTag) {
 			super();
 			this.channel = channel;
 			this.heartbeatMessage = heartbeat;

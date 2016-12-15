@@ -8,6 +8,8 @@ import org.apache.commons.logging.LogFactory;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.DefaultConsumer;
 
+import cn.shiyanjun.platform.scheduled.api.RunnableConsumer;
+
 public class AbstractRunnableConsumer extends DefaultConsumer implements RunnableConsumer {
 
 	private static final Log LOG = LogFactory.getLog(AbstractRunnableConsumer.class);

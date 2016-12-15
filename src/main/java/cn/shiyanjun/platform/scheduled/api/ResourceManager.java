@@ -1,10 +1,10 @@
-package cn.shiyanjun.platform.scheduled.common;
+package cn.shiyanjun.platform.scheduled.api;
 
 import java.util.Map;
 import java.util.Set;
 
 import cn.shiyanjun.platform.api.constants.TaskType;
-import cn.shiyanjun.platform.scheduled.component.ResourceMetadataManagerImpl.TaskStatCounter;
+import cn.shiyanjun.platform.scheduled.component.ResourceManagerImpl.TaskStatCounter;
 
 public interface ResourceManager {
 

@@ -11,13 +11,13 @@ import org.apache.commons.logging.LogFactory;
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Preconditions;
 
-import cn.shiyanjun.platform.api.LifecycleAware;
 import cn.shiyanjun.platform.api.common.AbstractComponent;
 import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.utils.NamedThreadFactory;
-import cn.shiyanjun.platform.scheduled.common.JobPersistenceService;
-import cn.shiyanjun.platform.scheduled.common.Protocol;
-import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
+import cn.shiyanjun.platform.scheduled.api.ComponentManager;
+import cn.shiyanjun.platform.scheduled.api.JobFetcher;
+import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
+import cn.shiyanjun.platform.scheduled.api.Protocol;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 import cn.shiyanjun.platform.scheduled.dao.entities.Job;
 import cn.shiyanjun.platform.scheduled.protocols.JobFetchProtocolManager;
@@ -30,11 +30,11 @@ import cn.shiyanjun.platform.scheduled.protocols.JobOrchestrationProtocolManager
  * 
  * @author yanjun
  */
-public class ScheduledJobFetcher extends AbstractComponent implements LifecycleAware {
+public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher {
 
 	private static final Log LOG = LogFactory.getLog(ScheduledJobFetcher.class);
 	private static final int INITIAL_DELAY_TIME = 5000;
-	private final GlobalResourceManager manager;
+	private final ComponentManager manager;
 	private ScheduledExecutorService fetchJobPool;
 	private final int fetchJobInterval;
 	private final JobPersistenceService jobPersistenceService;
@@ -42,8 +42,9 @@ public class ScheduledJobFetcher extends AbstractComponent implements LifecycleA
 	private final JobOrchestrationProtocolManager jobOrchestrationProtocolManager;
 	private final Enum<?> jobOrchestrationProtocol;
 	private final Enum<?> jobFetchProtocol;
+	private volatile boolean isSchedulingOpened = true;
 	
-	public ScheduledJobFetcher(GlobalResourceManager manager) {
+	public ScheduledJobFetcher(ComponentManager manager) {
 		super(manager.getContext());
 		this.manager = manager;
 		fetchJobInterval = context.getInt(ConfigKeys.SCHEDULED_FETCH_JOB_INTERVAL_MILLIS, 3000);
@@ -79,6 +80,16 @@ public class ScheduledJobFetcher extends AbstractComponent implements LifecycleA
 		fetchJobPool.shutdown();
 	}
 	
+	@Override
+	public boolean isSchedulingOpened() {
+		return isSchedulingOpened;
+	}
+
+	@Override
+	public void setSchedulingOpened(boolean isSchedulingOpened) {
+		this.isSchedulingOpened = isSchedulingOpened;
+	}
+	
 	/**
 	 * Read jobs from job database, and build jobs from the given JSON parameters. Finally
 	 * the built jobs will be dispatched to the job queueing manager to be queued.
@@ -94,7 +105,9 @@ public class ScheduledJobFetcher extends AbstractComponent implements LifecycleA
 		@Override
 		public void run() {
 			try {
-				fetch();
+				if(isSchedulingOpened) {
+					fetch();
+				}
 			} catch (Exception e) {
 				LOG.warn("Error occured when fetching submitted jobs: ", e);
 			}
@@ -134,5 +147,5 @@ public class ScheduledJobFetcher extends AbstractComponent implements LifecycleA
 			}
 		}
 	}
-	
+
 }

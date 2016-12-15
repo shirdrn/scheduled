@@ -16,12 +16,12 @@ import com.google.common.collect.Sets;
 
 import cn.shiyanjun.platform.api.Context;
 import cn.shiyanjun.platform.api.constants.TaskType;
-import cn.shiyanjun.platform.scheduled.common.ResourceManager;
+import cn.shiyanjun.platform.scheduled.api.ResourceManager;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 
-public class ResourceMetadataManagerImpl implements ResourceManager {
+public class ResourceManagerImpl implements ResourceManager {
 	
-	private static final Log LOG = LogFactory.getLog(ResourceMetadataManagerImpl.class);
+	private static final Log LOG = LogFactory.getLog(ResourceManagerImpl.class);
 	private final Map<String, Map<TaskType, Integer>> maxConcurrencies = Maps.newHashMap();
 	private volatile Map<String, Map<TaskType, AtomicInteger>> counters = Maps.newHashMap();
 	private final Map<String, Set<TaskType>> taskTypes = Maps.newHashMap();
@@ -29,7 +29,7 @@ public class ResourceMetadataManagerImpl implements ResourceManager {
 	private final Map<String, TaskStatCounter> statCounters = Maps.newHashMap();
 	private final Map<TaskType, Integer> reportedAvailableResources = Maps.newHashMap();
 	
-	public ResourceMetadataManagerImpl(Context context) {
+	public ResourceManagerImpl(Context context) {
 		String[] a = context.getStringArray(ConfigKeys.SCHEDULED_TASK_MAX_CONCURRENCIES, null);
 		Preconditions.checkArgument(a != null, "Max concurrencies MUST be configured");
 		for(String s : a) {
@@ -185,7 +185,7 @@ public class ResourceMetadataManagerImpl implements ResourceManager {
 				final AtomicInteger oldOccupied = counters.get(queue).get(taskType);
 				if(amount - oldOccupied.get() > 0) {
 					taskResourceLimits.put(taskType, amount);
-					LOG.info("Resource updated via REST: queue=" + queue + ", taskType" + taskType + 
+					LOG.info("Resource updated via REST: queue=" + queue + ", taskType=" + taskType + 
 							", oldAmount=" + oldAmount + ", newAmount=" + amount + 
 							", occupied=" + oldOccupied.get());
 				}

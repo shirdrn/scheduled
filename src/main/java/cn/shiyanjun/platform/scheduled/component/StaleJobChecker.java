@@ -14,9 +14,9 @@ import com.google.common.collect.Maps;
 import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.constants.TaskStatus;
 import cn.shiyanjun.platform.api.utils.Time;
-import cn.shiyanjun.platform.scheduled.component.DefaultSchedulingManager.JobInfo;
-import cn.shiyanjun.platform.scheduled.component.DefaultSchedulingManager.TaskID;
-import cn.shiyanjun.platform.scheduled.component.DefaultSchedulingManager.TaskInfo;
+import cn.shiyanjun.platform.scheduled.component.SchedulingManagerImpl.JobInfo;
+import cn.shiyanjun.platform.scheduled.component.SchedulingManagerImpl.TaskID;
+import cn.shiyanjun.platform.scheduled.component.SchedulingManagerImpl.TaskInfo;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 import cn.shiyanjun.platform.scheduled.dao.entities.Job;
@@ -31,13 +31,13 @@ import cn.shiyanjun.platform.scheduled.dao.entities.Task;
 class StaleJobChecker implements Runnable {
 	
 	private static final Log LOG = LogFactory.getLog(StaleJobChecker.class);
-	private final DefaultSchedulingManager sched;
+	private final SchedulingManagerImpl sched;
 	private final ConcurrentMap<Integer, JobInfo> timeoutJobIdToInfos = Maps.newConcurrentMap();
 	private final int keptTimeoutJobMaxCount;
 	private final int staleTaskMaxThresholdSecs;
 	private final long staleTaskMaxThresholdMillis;
 	
-	public StaleJobChecker(final DefaultSchedulingManager schedulingManager) {
+	public StaleJobChecker(final SchedulingManagerImpl schedulingManager) {
 		this.sched = schedulingManager;
 		keptTimeoutJobMaxCount = schedulingManager.manager.getContext().getInt(ConfigKeys.SCHEDULED_KEPT_TIMEOUT_JOB_MAX_COUNT, 100);
 		// default 2 hours
@@ -107,7 +107,7 @@ class StaleJobChecker implements Runnable {
 						jobInfo.inMemJobUpdateLock.unlock();
 					}
 					sched.handleInMemoryCompletedTask(jobId);
-					removeJobFromRedis(queue, jobId);
+					sched.removeRedisJob(queue, jobId);
 					handleTimeoutInMemTask(jobInfo, now);
 				}
 				
@@ -122,13 +122,6 @@ class StaleJobChecker implements Runnable {
 		}
 	}
 	
-	private void removeJobFromRedis(String queue, int jobId) {
-		Set<String> redisJobs = sched.getJobs(queue);
-		if(redisJobs.contains(String.valueOf(jobId))) {
-			sched.removeRedisJob(queue, jobId);
-		}		
-	}
-
 	private void checkInMemStaleJobs() {
 		for(int jobId : sched.runningJobIdToInfos.keySet()) {
 			JobInfo jobInfo = sched.runningJobIdToInfos.get(jobId);
@@ -161,7 +154,7 @@ class StaleJobChecker implements Runnable {
 				
 				// handle in-memory completed job
 				sched.handleInMemoryCompletedTask(jobId);
-				removeJobFromRedis(queue, jobId);
+				sched.removeRedisJob(queue, jobId);
 			}
 		}
 		
@@ -181,7 +174,7 @@ class StaleJobChecker implements Runnable {
 				if(jobInfo == null) {
 					// clear job with FAILED status from Redis queue
 					if(jobStatus == JobStatus.FAILED) {
-						removeJobFromRedis(queue, jobId);
+						sched.removeRedisJob(queue, jobId);
 						LOG.warn("Stale job in Redis purged: queue=" + queue + ", job=" + job);
 					}
 					
@@ -189,7 +182,7 @@ class StaleJobChecker implements Runnable {
 					long now = Time.now();
 					if(jobStatus == JobStatus.RUNNING 
 							&& now - lastUpdateTs > staleTaskMaxThresholdMillis) {
-						removeJobFromRedis(queue, jobId);
+						sched.removeRedisJob(queue, jobId);
 						LOG.warn("Stale job in Redis purged: queue=" + queue + ", job=" + job);
 					}
 				}

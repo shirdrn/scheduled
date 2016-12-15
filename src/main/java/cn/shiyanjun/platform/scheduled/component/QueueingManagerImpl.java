@@ -20,19 +20,19 @@ import cn.shiyanjun.platform.api.common.AbstractComponent;
 import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.constants.TaskStatus;
 import cn.shiyanjun.platform.api.utils.Time;
-import cn.shiyanjun.platform.scheduled.common.JobPersistenceService;
-import cn.shiyanjun.platform.scheduled.common.JobQueueingService;
-import cn.shiyanjun.platform.scheduled.common.QueueingManager;
-import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
-import cn.shiyanjun.platform.scheduled.common.TaskPersistenceService;
+import cn.shiyanjun.platform.scheduled.api.ComponentManager;
+import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
+import cn.shiyanjun.platform.scheduled.api.JobQueueingService;
+import cn.shiyanjun.platform.scheduled.api.QueueingManager;
+import cn.shiyanjun.platform.scheduled.api.TaskPersistenceService;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 import cn.shiyanjun.platform.scheduled.dao.entities.Job;
 import cn.shiyanjun.platform.scheduled.dao.entities.Task;
 
-public class DefaultQueueingManager extends AbstractComponent implements QueueingManager {
+public class QueueingManagerImpl extends AbstractComponent implements QueueingManager {
 
-	private static final Log LOG = LogFactory.getLog(DefaultQueueingManager.class);
-	private final GlobalResourceManager protocol;
+	private static final Log LOG = LogFactory.getLog(QueueingManagerImpl.class);
+	private final ComponentManager protocol;
 	private final BlockingQueue<JSONObject> queueingQueue = Queues.newLinkedBlockingQueue();
 	private volatile boolean running = true;
 	private final Thread queueingWorker;
@@ -42,7 +42,7 @@ public class DefaultQueueingManager extends AbstractComponent implements Queuein
 	private final TaskPersistenceService taskPersistenceService;
 	private final Set<String> queueNameSet = Sets.newHashSet();
 	
-    public DefaultQueueingManager(GlobalResourceManager manager) {
+    public QueueingManagerImpl(ComponentManager manager) {
 		super(manager.getContext());
 		this.protocol = manager;
 		queueingWorker = new QueueingWorker();
@@ -72,7 +72,7 @@ public class DefaultQueueingManager extends AbstractComponent implements Queuein
 	public void registerQueue(String queueName, int... types) {
 		if(!queueNameSet.contains(queueName)) {
 			final JobQueueingService jobQueueingService = 
-					new JobRedisQueueingService(context, queueName, protocol.getJedisPool());
+					new RedisJobQueueingService(context, queueName, protocol.getJedisPool());
 			QueueingContext queueingContext = new QueueingContext(queueName);
 			queueingContext.jobQueueingService = jobQueueingService;
 			for(int type : types) {

@@ -6,6 +6,7 @@ import com.google.common.collect.Maps;
 
 import cn.shiyanjun.platform.api.Context;
 import cn.shiyanjun.platform.api.common.AbstractComponent;
+import cn.shiyanjun.platform.scheduled.api.ProtocolManager;
 
 public abstract class AbstractProtocolManager<P> extends AbstractComponent implements ProtocolManager<P> {
 

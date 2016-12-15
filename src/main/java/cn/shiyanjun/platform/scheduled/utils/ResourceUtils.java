@@ -5,6 +5,9 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 import com.google.common.base.Throwables;
 import com.rabbitmq.client.ConnectionFactory;
 
@@ -15,6 +18,7 @@ import redis.clients.jedis.JedisPoolConfig;
 
 public class ResourceUtils {
 
+	private static final Log LOG = LogFactory.getLog(ResourceUtils.class);
 	private static final ConcurrentMap<Class<?>, Object> pooledInstances = new ConcurrentHashMap<>();
 	private static final ConcurrentMap<Class<?>, String> pooledConfigurations = new ConcurrentHashMap<>();
 	private static final Map<Class<?>, ResourceBuilder<?>> builders = new HashMap<>();
@@ -32,6 +36,7 @@ public class ResourceUtils {
 			T resource = (T) builder.build(config);
 			pooledInstances.putIfAbsent(resourceClazz, resource);
 			pooledConfigurations.putIfAbsent(resourceClazz, config);
+			LOG.info("Resource registered: config=" + config + ", resource=" + resource);
 		} catch (Exception e) {
 			Throwables.propagate(e);
 		}

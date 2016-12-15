@@ -12,8 +12,8 @@ import org.apache.commons.logging.LogFactory;
 import com.rabbitmq.client.ConnectionFactory;
 import com.rabbitmq.client.Consumer;
 
+import cn.shiyanjun.platform.scheduled.api.RunnableConsumer;
 import cn.shiyanjun.platform.scheduled.common.AbstractMQAccessService;
-import cn.shiyanjun.platform.scheduled.common.RunnableConsumer;
 
 public class RabbitMQAccessService extends AbstractMQAccessService {
 

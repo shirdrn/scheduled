@@ -15,12 +15,12 @@ import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.constants.TaskStatus;
 import cn.shiyanjun.platform.api.constants.TaskType;
 import cn.shiyanjun.platform.api.utils.Time;
-import cn.shiyanjun.platform.scheduled.common.JobQueueingService;
-import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
-import cn.shiyanjun.platform.scheduled.common.ResourceManager;
+import cn.shiyanjun.platform.scheduled.api.ComponentManager;
+import cn.shiyanjun.platform.scheduled.api.JobQueueingService;
+import cn.shiyanjun.platform.scheduled.api.ResourceManager;
+import cn.shiyanjun.platform.scheduled.api.SchedulingPolicy;
+import cn.shiyanjun.platform.scheduled.api.TaskPersistenceService;
 import cn.shiyanjun.platform.scheduled.common.TaskOrder;
-import cn.shiyanjun.platform.scheduled.common.SchedulingStrategy;
-import cn.shiyanjun.platform.scheduled.common.TaskPersistenceService;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 import cn.shiyanjun.platform.scheduled.dao.entities.Task;
 
@@ -29,21 +29,21 @@ import cn.shiyanjun.platform.scheduled.dao.entities.Task;
  * are available. It controls to update resource counter for the specified task type, 
  * which is managed by another component {@link ResourceManager}.
  * 
- * @see {@link ResourceMetadataManagerImpl}
+ * @see {@link ResourceManagerImpl}
  * @author yanjun
  */
-public class MaxConcurrencySchedulingStrategy extends AbstractComponent implements SchedulingStrategy {
+public class MaxConcurrencySchedulingPolicy extends AbstractComponent implements SchedulingPolicy {
 
-	private static final Log LOG = LogFactory.getLog(MaxConcurrencySchedulingStrategy.class);
+	private static final Log LOG = LogFactory.getLog(MaxConcurrencySchedulingPolicy.class);
 	private final ResourceManager resourceMetadataManager;
 	private final TaskPersistenceService taskPersistenceService;
-	private final GlobalResourceManager manager;
+	private final ComponentManager manager;
 
-	public MaxConcurrencySchedulingStrategy(GlobalResourceManager manager) {
+	public MaxConcurrencySchedulingPolicy(ComponentManager manager) {
 		super(manager.getContext());
 		this.manager = manager;
         this.taskPersistenceService = manager.getTaskPersistenceService();
-        this.resourceMetadataManager = manager.getResourceMetadataManager();
+        this.resourceMetadataManager = manager.getResourceManager();
 	}
 
 	@Override
@@ -53,7 +53,7 @@ public class MaxConcurrencySchedulingStrategy extends AbstractComponent implemen
 		int availableResources = resourceMetadataManager.queryResource(queue, taskType);
 		LOG.debug("Available resources: queue=" + queue + ", taskType=" + taskType + ", resources=" + availableResources);
         if (availableResources > 0) {
-            DefaultQueueingManager.QueueingContext queueingContext = manager.getQueueingManager().getQueueingContext(queue);
+            QueueingManagerImpl.QueueingContext queueingContext = manager.getQueueingManager().getQueueingContext(queue);
             JobQueueingService qs = queueingContext.getJobQueueingService();
             Set<String> jobs = qs.getJobs();
             if(CollectionUtils.isNotEmpty(jobs)) {

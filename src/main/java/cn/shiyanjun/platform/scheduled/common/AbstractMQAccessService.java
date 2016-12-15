@@ -12,6 +12,8 @@ import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
 
+import cn.shiyanjun.platform.scheduled.api.MQAccessService;
+
 public abstract class AbstractMQAccessService implements MQAccessService {
 
 	private static final Log LOG = LogFactory.getLog(AbstractMQAccessService.class);

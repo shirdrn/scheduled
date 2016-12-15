@@ -6,7 +6,7 @@ import com.rabbitmq.client.ConnectionFactory;
 
 import cn.shiyanjun.platform.api.constants.JSONKeys;
 import cn.shiyanjun.platform.api.constants.TaskStatus;
-import cn.shiyanjun.platform.scheduled.common.MQAccessService;
+import cn.shiyanjun.platform.scheduled.api.MQAccessService;
 import cn.shiyanjun.platform.scheduled.component.RabbitMQAccessService;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 import cn.shiyanjun.platform.scheduled.utils.ResourceUtils;
@@ -22,7 +22,7 @@ public class RabbitMQProducerSimulator {
 		final MQAccessService taskMQAccessService = new RabbitMQAccessService(taskQName, connectionFactory);
 		taskMQAccessService.start();
 		
-		String platformId = "4e5cff3d8b9d4c2d89d8e9e64e78fdc3";
+		String platformId = "5d54f2f494964c35a81e4422678141a0";
 		int taskId = 1;
 		int jobId = 1;
 		int serialNo = 1;

@@ -1,4 +1,4 @@
-package cn.shiyanjun.platform.scheduled.common;
+package cn.shiyanjun.platform.scheduled.api;
 
 public interface Dispatcher<T> {
 

@@ -9,16 +9,16 @@ import com.google.common.collect.Lists;
 
 import cn.shiyanjun.platform.api.Context;
 import cn.shiyanjun.platform.api.constants.JobStatus;
+import cn.shiyanjun.platform.scheduled.api.ComponentManager;
+import cn.shiyanjun.platform.scheduled.api.Protocol;
 import cn.shiyanjun.platform.scheduled.common.AbstractProtocolManager;
-import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
-import cn.shiyanjun.platform.scheduled.common.Protocol;
 import cn.shiyanjun.platform.scheduled.dao.entities.Job;
 
 public final class JobFetchProtocolManager extends AbstractProtocolManager<Protocol<JobStatus, List<Job>>> {
 
 	private static final Log LOG = LogFactory.getLog(JobFetchProtocolManager.class);
-	private final GlobalResourceManager manager;
-	public JobFetchProtocolManager(GlobalResourceManager grm, Context context) {
+	private final ComponentManager manager;
+	public JobFetchProtocolManager(ComponentManager grm, Context context) {
 		super(context);
 		manager = grm;
 	}

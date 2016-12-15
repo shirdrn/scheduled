@@ -7,7 +7,7 @@ import org.apache.ibatis.session.SqlSessionFactory;
 
 import com.google.common.collect.Lists;
 
-import cn.shiyanjun.platform.scheduled.common.TaskPersistenceService;
+import cn.shiyanjun.platform.scheduled.api.TaskPersistenceService;
 import cn.shiyanjun.platform.scheduled.dao.entities.Task;
 import cn.shiyanjun.platform.scheduled.dao.mappers.TaskMapper;
 

@@ -1,10 +1,11 @@
-package cn.shiyanjun.platform.scheduled.common;
+package cn.shiyanjun.platform.scheduled.api;
 
 import java.util.Optional;
 
 import cn.shiyanjun.platform.api.constants.TaskType;
+import cn.shiyanjun.platform.scheduled.common.TaskOrder;
 
-public interface SchedulingStrategy {
+public interface SchedulingPolicy {
 	
 	/**
 	 * Offer a task to be scheduled

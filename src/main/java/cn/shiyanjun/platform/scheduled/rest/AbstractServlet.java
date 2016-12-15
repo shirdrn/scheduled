@@ -1,35 +1,29 @@
 package cn.shiyanjun.platform.scheduled.rest;
 
+import java.util.Objects;
+
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 
-import cn.shiyanjun.platform.scheduled.common.QueueingManager;
-import cn.shiyanjun.platform.scheduled.common.GlobalResourceManager;
-import cn.shiyanjun.platform.scheduled.common.ResourceManager;
-import cn.shiyanjun.platform.scheduled.common.RestManageable;
-import cn.shiyanjun.platform.scheduled.common.SchedulingStrategy;
+import com.alibaba.fastjson.JSONObject;
+
+import cn.shiyanjun.platform.scheduled.api.ComponentManager;
+import cn.shiyanjun.platform.scheduled.api.RestExporter;
 
 public abstract class AbstractServlet extends HttpServlet {
 	
-	protected static final String STATUS_CODE = "statusCode";
-	protected static final String MESSAGE = "message";
-	protected static final String JOBS = "jobs";
+	private static final String STATUS_CODE = "statusCode";
+	private static final String MESSAGE = "message";
 	
 	private static final long serialVersionUID = 1L;
-    private final RestManageable restManageable;
-    private final QueueingManager queueingManager;
-	private final SchedulingStrategy schedulingStrategy;
-	private final ResourceManager resourceMetadataManager;
-	protected final GlobalResourceManager protocol;
+    private final RestExporter restExporter;
+	protected final ComponentManager manager;
 
-    public AbstractServlet(GlobalResourceManager protocol) {
+    public AbstractServlet(ComponentManager manager) {
         super();
-        this.protocol = protocol;
-        restManageable= protocol.getRestManageable();
-        queueingManager = protocol.getQueueingManager();
-        schedulingStrategy = protocol.getSchedulingStrategy();
-        resourceMetadataManager = protocol.getResourceMetadataManager();
+        this.manager = manager;
+        restExporter= manager.getRestExporter();
     }
     
     @Override
@@ -37,19 +31,23 @@ public abstract class AbstractServlet extends HttpServlet {
     	super.init(config);
     }
 
-	public RestManageable getRestManageable() {
-		return restManageable;
-	}
-
-	public QueueingManager getQueueingManager() {
-		return queueingManager;
-	}
-
-	public SchedulingStrategy getSchedulingStrategy() {
-		return schedulingStrategy;
+	protected RestExporter getRestExporter() {
+		return restExporter;
 	}
 	
-	public ResourceManager getResourceMetadataManager() {
-		return resourceMetadataManager;
+	protected <T> void addKV(JSONObject res, String key, T value) {
+		if(Objects.isNull(value)) {
+			res.put(key, "");
+		} else {
+			res.put(key, value);
+		}
+	}
+	
+	protected void addMessage(JSONObject res, String message) {
+		res.put(MESSAGE, message);
+	}
+	
+	protected void addStatusCode(JSONObject res, int code) {
+		res.put(STATUS_CODE, code);
 	}
 }
