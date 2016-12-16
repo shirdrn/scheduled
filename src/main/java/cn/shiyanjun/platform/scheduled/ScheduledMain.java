@@ -13,6 +13,7 @@ import cn.shiyanjun.platform.api.Context;
 import cn.shiyanjun.platform.api.LifecycleAware;
 import cn.shiyanjun.platform.api.common.AbstractComponent;
 import cn.shiyanjun.platform.api.common.ContextImpl;
+import cn.shiyanjun.platform.api.utils.ComponentUtils;
 import cn.shiyanjun.platform.scheduled.api.ComponentManager;
 import cn.shiyanjun.platform.scheduled.api.JobFetcher;
 import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
@@ -141,13 +142,9 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	@Override
 	public void stop() {
 		try {
-			schedulingManager.stop();
-			recoveryManager.stop();
-			jobFetcher.stop();
-			queueingManager.stop();
-			taskMQAccessService.stop();
-			heartbeatMQAccessService.stop();
-			restServer.stop();
+			ComponentUtils.stopAllQuietly(
+					schedulingManager, recoveryManager, jobFetcher, queueingManager, 
+					taskMQAccessService, heartbeatMQAccessService, restServer);
 			ResourceUtils.closeAll();
 		} catch (Exception e) {}
 	}
