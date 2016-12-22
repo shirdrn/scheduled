@@ -128,11 +128,21 @@ public class QueueingManagerImpl extends AbstractComponent implements QueueingMa
 						List<Task> userTasks = Lists.newArrayList();
 						jsonTasks.forEach(jTask -> createAndCollectTask(jobId, userTasks, jTask));
 						
-						// insert task informations into database, with initial status: CREATED
-						taskPersistenceService.insertTasks(userTasks);
-						
-						// add tasks of a job to waiting queue
-						doQueueing(jobId, jobType, userTasks);
+						try {
+							// insert task informations into database, with initial status: CREATED
+							taskPersistenceService.insertTasks(userTasks);
+							
+							// add tasks of a job to waiting queue
+							doQueueing(jobId, jobType, userTasks);
+						} catch (Exception e) {
+							LOG.warn("Failed to save or queueing job: " + job, e);
+							// update job status to FAILED
+							Job myJob = new Job();
+							myJob.setId(jobId);
+							myJob.setStatus(JobStatus.FAILED.getCode());
+							myJob.setDoneTime(new Timestamp(Time.now()));
+							jobPersistenceService.updateJobByID(myJob);
+						}
 					}
 				} catch (Exception e) {
 					LOG.error("Failed to queueing: job=" + job, e);
