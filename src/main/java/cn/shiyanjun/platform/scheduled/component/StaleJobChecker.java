@@ -1,5 +1,6 @@
 package cn.shiyanjun.platform.scheduled.component;
 
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
@@ -70,12 +71,19 @@ class StaleJobChecker implements Runnable {
 	}
 	
 	private void checkInDBStaleJobs() {
-		// job with RUNNING status
-		List<Job> jobs = sched.getJobByState(JobStatus.RUNNING);
+		// check a in-db stale job with status in (FETCHED, SCHEDULED, RUNNING)
+		Arrays.asList(new JobStatus[]{JobStatus.FETCHED, JobStatus.SCHEDULED, JobStatus.RUNNING})
+			.forEach(status -> {
+				List<Job> jobs = sched.getJobByState(status);
+				processInDBStaleJobs(jobs);
+		});
+	}
+
+	private void processInDBStaleJobs(List<Job> jobs) {
 		jobs.forEach(job -> {
 			int jobId = job.getId();
 			long now = Time.now();
-			// check a running job
+			// check whether a job is timeout
 			if(now - job.getDoneTime().getTime() > staleTaskMaxThresholdMillis) {
 				LOG.info("Stale in-db job: jobId=" + jobId);
 				List<Task> tasks = sched.getTasksFor(job.getId());
