@@ -7,6 +7,7 @@ import java.util.Set;
 import com.alibaba.fastjson.JSONObject;
 
 import cn.shiyanjun.platform.api.constants.TaskType;
+import cn.shiyanjun.platform.api.utils.Pair;
 
 public interface RestExporter {
 
@@ -21,4 +22,7 @@ public interface RestExporter {
 	
 	void setSchedulingOpened(boolean isSchedulingOpened);
 	boolean isSchedulingOpened();
+	
+	Pair<String, String> queryMaintenanceTimeSegment();
+	void updateMaintenanceTimeSegment(String startTime, String endTime);
 }

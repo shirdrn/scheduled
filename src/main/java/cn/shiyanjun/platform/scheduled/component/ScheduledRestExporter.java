@@ -11,6 +11,7 @@ import com.google.common.collect.Sets;
 
 import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.constants.TaskType;
+import cn.shiyanjun.platform.api.utils.Pair;
 import cn.shiyanjun.platform.scheduled.api.ComponentManager;
 import cn.shiyanjun.platform.scheduled.api.JobQueueingService;
 import cn.shiyanjun.platform.scheduled.api.RestExporter;
@@ -97,6 +98,16 @@ public class ScheduledRestExporter implements RestExporter {
 	@Override
 	public boolean isSchedulingOpened() {
 		return manager.getJobFetcher().isSchedulingOpened();
+	}
+
+	@Override
+	public Pair<String, String> queryMaintenanceTimeSegment() {
+		return manager.getJobFetcher().getMaintenanceTimeSegment();
+	}
+
+	@Override
+	public void updateMaintenanceTimeSegment(String startTime, String endTime) {
+		manager.getJobFetcher().updateMaintenanceTimeSegment(startTime, endTime);		
 	}
 
 

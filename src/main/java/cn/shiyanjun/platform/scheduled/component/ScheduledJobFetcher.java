@@ -14,6 +14,8 @@ import com.google.common.base.Preconditions;
 import cn.shiyanjun.platform.api.common.AbstractComponent;
 import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.utils.NamedThreadFactory;
+import cn.shiyanjun.platform.api.utils.Pair;
+import cn.shiyanjun.platform.api.utils.Time;
 import cn.shiyanjun.platform.scheduled.api.ComponentManager;
 import cn.shiyanjun.platform.scheduled.api.JobFetcher;
 import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
@@ -43,12 +45,18 @@ public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher
 	private final Enum<?> jobOrchestrationProtocol;
 	private final Enum<?> jobFetchProtocol;
 	private volatile boolean isSchedulingOpened = true;
+	private volatile String maintenanceSegmentStartTime;
+	private volatile String maintenanceSegmentEndTime;
 	
 	public ScheduledJobFetcher(ComponentManager manager) {
 		super(manager.getContext());
 		this.manager = manager;
 		fetchJobInterval = context.getInt(ConfigKeys.SCHEDULED_FETCH_JOB_INTERVAL_MILLIS, 3000);
 		LOG.info("Configs: fetchJobInterval=" + fetchJobInterval + ", initialDelay=" + INITIAL_DELAY_TIME);
+		
+		maintenanceSegmentStartTime = context.get(ConfigKeys.SCHEDULED_MAINTENANCE_TIME_SEGMENT_START, "03:00:00");
+		maintenanceSegmentEndTime = context.get(ConfigKeys.SCHEDULED_MAINTENANCE_TIME_SEGMENT_END, "03:30:00");
+		LOG.info("Configs: maintenanceSegmentStartTime=" + maintenanceSegmentStartTime + ", maintenanceSegmentEndTime=" + maintenanceSegmentEndTime);
 		
 		jobPersistenceService = manager.getJobPersistenceService();
 		
@@ -90,6 +98,18 @@ public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher
 		this.isSchedulingOpened = isSchedulingOpened;
 	}
 	
+	@Override
+	public Pair<String, String> getMaintenanceTimeSegment() {
+		return new Pair<>(maintenanceSegmentStartTime, maintenanceSegmentEndTime);
+	}
+
+	@Override
+	public void updateMaintenanceTimeSegment(String startTime, String endTime) {
+		maintenanceSegmentStartTime = startTime;
+		maintenanceSegmentEndTime = endTime;
+		LOG.info("Maintenance time segment updated: startTime=" + startTime + ", endTime=" + endTime);
+	}
+	
 	/**
 	 * Read jobs from job database, and build jobs from the given JSON parameters. Finally
 	 * the built jobs will be dispatched to the job queueing manager to be queued.
@@ -105,12 +125,25 @@ public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher
 		@Override
 		public void run() {
 			try {
-				if(isSchedulingOpened) {
+				if(tryToFetch()) {
 					fetch();
 				}
 			} catch (Exception e) {
 				LOG.warn("Error occured when fetching submitted jobs: ", e);
 			}
+		}
+		
+		private boolean tryToFetch() {
+			if(isSchedulingOpened) {
+				String start = maintenanceSegmentStartTime.replaceAll(":", "");
+				String end = maintenanceSegmentEndTime.replaceAll(":", "");
+				String current = Time.formatCurrentHourTime().replaceAll(":", "");
+				int currentTime = Integer.parseInt(current);
+				if(currentTime < Integer.parseInt(start) && currentTime > Integer.parseInt(end)) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		private void fetch() throws Exception {

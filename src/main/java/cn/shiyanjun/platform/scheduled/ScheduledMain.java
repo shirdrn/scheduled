@@ -26,19 +26,20 @@ import cn.shiyanjun.platform.scheduled.api.RestServer;
 import cn.shiyanjun.platform.scheduled.api.SchedulingManager;
 import cn.shiyanjun.platform.scheduled.api.SchedulingPolicy;
 import cn.shiyanjun.platform.scheduled.api.TaskPersistenceService;
-import cn.shiyanjun.platform.scheduled.component.QueueingManagerImpl;
-import cn.shiyanjun.platform.scheduled.component.RecoveryManagerImpl;
-import cn.shiyanjun.platform.scheduled.component.SchedulingManagerImpl;
 import cn.shiyanjun.platform.scheduled.component.JobPersistenceServiceImpl;
 import cn.shiyanjun.platform.scheduled.component.MaxConcurrencySchedulingPolicy;
+import cn.shiyanjun.platform.scheduled.component.QueueingManagerImpl;
 import cn.shiyanjun.platform.scheduled.component.RabbitMQAccessService;
+import cn.shiyanjun.platform.scheduled.component.RecoveryManagerImpl;
 import cn.shiyanjun.platform.scheduled.component.ResourceManagerImpl;
 import cn.shiyanjun.platform.scheduled.component.ScheduledJobFetcher;
 import cn.shiyanjun.platform.scheduled.component.ScheduledRestExporter;
 import cn.shiyanjun.platform.scheduled.component.ScheduledRestServer;
+import cn.shiyanjun.platform.scheduled.component.SchedulingManagerImpl;
 import cn.shiyanjun.platform.scheduled.component.TaskPersistenceServiceImpl;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 import cn.shiyanjun.platform.scheduled.dao.DaoFactory;
+import cn.shiyanjun.platform.scheduled.rest.MaintenanceServlet;
 import cn.shiyanjun.platform.scheduled.rest.QueueingServlet;
 import cn.shiyanjun.platform.scheduled.rest.ResourceServlet;
 import cn.shiyanjun.platform.scheduled.rest.SchedulingServlet;
@@ -123,6 +124,7 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 		restServer.register("/admin/resource", ResourceServlet.class);
 		restServer.register("/admin/queueing", QueueingServlet.class);
 		restServer.register("/admin/scheduling", SchedulingServlet.class);
+		restServer.register("/admin/maintenance", MaintenanceServlet.class);
 	}
 	
 	private void parseRedisQueueJobRelations() {

@@ -18,6 +18,7 @@ import cn.shiyanjun.platform.api.common.AbstractComponent;
 import cn.shiyanjun.platform.api.utils.ReflectionUtils;
 import cn.shiyanjun.platform.scheduled.api.ComponentManager;
 import cn.shiyanjun.platform.scheduled.api.RestServer;
+import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 
 public abstract class AbstractRestServer extends AbstractComponent implements RestServer {
 
@@ -30,7 +31,7 @@ public abstract class AbstractRestServer extends AbstractComponent implements Re
 	public AbstractRestServer(ComponentManager manager) {
 		super(manager.getContext());
 		this.manager = manager;
-		int webPort = context.getInt("", 8030);
+		int webPort = context.getInt(ConfigKeys.SCHEDULED_WEB_MANAGER_PORT, 8030);
 		server = new Server(webPort);
 		servletContext = new ServletContextHandler(ServletContextHandler.SESSIONS);
 	}
@@ -42,7 +43,7 @@ public abstract class AbstractRestServer extends AbstractComponent implements Re
 			server.setHandler(servletContext);
 			
 			// configure servlets
-			servlets.keySet().stream().forEach(path -> {
+			servlets.keySet().forEach(path -> {
 				Class<? extends HttpServlet> servletClazz = servlets.get(path);
 				HttpServlet servlet = ReflectionUtils.newInstance(
 						servletClazz, HttpServlet.class, new Object[]{ manager });
