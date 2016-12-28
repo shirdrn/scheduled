@@ -125,7 +125,7 @@ public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher
 		@Override
 		public void run() {
 			try {
-				if(tryToFetch()) {
+				if(shouldTryToFetch()) {
 					fetch();
 				}
 			} catch (Exception e) {
@@ -133,13 +133,13 @@ public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher
 			}
 		}
 		
-		private boolean tryToFetch() {
+		private boolean shouldTryToFetch() {
 			if(isSchedulingOpened) {
 				String start = maintenanceSegmentStartTime.replaceAll(":", "");
 				String end = maintenanceSegmentEndTime.replaceAll(":", "");
 				String current = Time.formatCurrentHourTime().replaceAll(":", "");
 				int currentTime = Integer.parseInt(current);
-				if(currentTime < Integer.parseInt(start) && currentTime > Integer.parseInt(end)) {
+				if(currentTime < Integer.parseInt(start) || currentTime > Integer.parseInt(end)) {
 					return true;
 				}
 			}
