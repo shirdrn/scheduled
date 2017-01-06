@@ -21,8 +21,8 @@ public class ResourceServlet extends AbstractServlet {
 	private static final Log LOG = LogFactory.getLog(ResourceServlet.class);
 	private static final long serialVersionUID = 1L;
 
-	public ResourceServlet(ComponentManager protocol) {
-		super(protocol);
+	public ResourceServlet(ComponentManager manager) {
+		super(manager);
 	}
 	
 	protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {

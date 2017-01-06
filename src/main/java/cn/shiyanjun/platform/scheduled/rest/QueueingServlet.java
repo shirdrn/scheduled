@@ -24,8 +24,8 @@ public class QueueingServlet extends AbstractServlet {
 	private static final Log LOG = LogFactory.getLog(QueueingServlet.class);
 	private static final long serialVersionUID = 1L;
 	
-	public QueueingServlet(ComponentManager protocol) {
-		super(protocol);
+	public QueueingServlet(ComponentManager manager) {
+		super(manager);
 	}
 	
 	protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {

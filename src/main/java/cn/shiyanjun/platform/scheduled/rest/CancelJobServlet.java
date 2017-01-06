@@ -14,12 +14,12 @@ import com.google.common.base.Strings;
 
 import cn.shiyanjun.platform.scheduled.api.ComponentManager;
 
-public class SchedulingServlet extends AbstractServlet {
+public class CancelJobServlet extends AbstractServlet {
 
-	private static final Log LOG = LogFactory.getLog(SchedulingServlet.class);
+	private static final Log LOG = LogFactory.getLog(CancelJobServlet.class);
 	private static final long serialVersionUID = 1L;
 	
-	public SchedulingServlet(ComponentManager manager) {
+	public CancelJobServlet(ComponentManager manager) {
 		super(manager);
 	}
 	
@@ -27,43 +27,28 @@ public class SchedulingServlet extends AbstractServlet {
         doPost(request, response);
     }
 
-	// http://127.0.0.1:8030/admin/scheduling?isSchedulingOpened=true
+	// http://127.0.0.1:8030/admin/cancelJob?jobId=1426
 	protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
 		JSONObject res = new JSONObject(true);
-		String isSchedulingOpened = request.getParameter("isSchedulingOpened");
+		String id = request.getParameter("jobId");
 		
 		JSONObject req = new JSONObject(true);
-		addKV(req, "isSchedulingOpened", isSchedulingOpened);
+		addKV(req, "jobId", id);
     	LOG.info("Requested params: " + req.toJSONString());
 		
-		if(!Strings.isNullOrEmpty(isSchedulingOpened)) {
+		if(!Strings.isNullOrEmpty(id)) {
 			try {
-				boolean isOpened = Boolean.parseBoolean(isSchedulingOpened);
-				boolean current = super.getRestExporter().isSchedulingOpened();
-				if(isOpened) {
-					if(current) {
-						LOG.warn("Already opened!");
-					} else {
-						super.getRestExporter().setSchedulingOpened(isOpened);
-					}
-				} else {
-					if(!current) {
-						LOG.warn("Already closed!");
-					} else {
-						super.getRestExporter().setSchedulingOpened(isOpened);
-					}
-				}
+				int jobId = Integer.parseInt(id);
+				boolean cancelled = super.getRestExporter().cancelJob(jobId);
+				JSONObject val = new JSONObject(true);
+				addKV(val, "cancelled", cancelled);
+				
 				addStatusCode(res, 200);
 				addMessage(res, "OK");
 				
 				JSONObject a = new JSONObject();
 				
-				JSONObject val = new JSONObject(true);
-				addKV(val, "current", current);
-				addKV(val, "request", isOpened);
-				addKV(val, "updated", isOpened);
-				
-				addKV(a, "isSchedulingOpened", val);
+				addKV(a, "current", val);
 				
 				addKV( res, "state", a);
 			} catch (Exception e) {

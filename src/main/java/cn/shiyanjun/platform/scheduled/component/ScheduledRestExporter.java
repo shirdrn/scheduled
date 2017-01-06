@@ -84,6 +84,11 @@ public class ScheduledRestExporter implements RestExporter {
 		});
 		return statuses;
 	}
+	
+	@Override
+	public boolean cancelJob(int jobId) {
+		return manager.getJobController().cancelJob(jobId);
+	}
 
 	@Override
 	public void updateResourceAmount(String queue, TaskType taskType, int amount) {
@@ -109,6 +114,5 @@ public class ScheduledRestExporter implements RestExporter {
 	public void updateMaintenanceTimeSegment(String startTime, String endTime) {
 		manager.getJobFetcher().updateMaintenanceTimeSegment(startTime, endTime);		
 	}
-
 
 }

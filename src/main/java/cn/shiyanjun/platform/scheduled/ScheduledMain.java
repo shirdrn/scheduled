@@ -15,6 +15,7 @@ import cn.shiyanjun.platform.api.common.AbstractComponent;
 import cn.shiyanjun.platform.api.common.ContextImpl;
 import cn.shiyanjun.platform.api.utils.ComponentUtils;
 import cn.shiyanjun.platform.scheduled.api.ComponentManager;
+import cn.shiyanjun.platform.scheduled.api.JobController;
 import cn.shiyanjun.platform.scheduled.api.JobFetcher;
 import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
 import cn.shiyanjun.platform.scheduled.api.MQAccessService;
@@ -39,6 +40,7 @@ import cn.shiyanjun.platform.scheduled.component.SchedulingManagerImpl;
 import cn.shiyanjun.platform.scheduled.component.TaskPersistenceServiceImpl;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 import cn.shiyanjun.platform.scheduled.dao.DaoFactory;
+import cn.shiyanjun.platform.scheduled.rest.CancelJobServlet;
 import cn.shiyanjun.platform.scheduled.rest.MaintenanceServlet;
 import cn.shiyanjun.platform.scheduled.rest.QueueingServlet;
 import cn.shiyanjun.platform.scheduled.rest.ResourceServlet;
@@ -125,6 +127,7 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 		restServer.register("/admin/queueing", QueueingServlet.class);
 		restServer.register("/admin/scheduling", SchedulingServlet.class);
 		restServer.register("/admin/maintenance", MaintenanceServlet.class);
+		restServer.register("/admin/cancelJob", CancelJobServlet.class);
 	}
 	
 	private void parseRedisQueueJobRelations() {
@@ -209,6 +212,11 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	@Override
 	public JobFetcher getJobFetcher() {
 		return jobFetcher;
+	}
+	
+	@Override
+	public JobController getJobController() {
+		return schedulingManager;
 	}
 	
 	public static void main(String[] args) {

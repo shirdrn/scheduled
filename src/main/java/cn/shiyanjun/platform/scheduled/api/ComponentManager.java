@@ -20,6 +20,7 @@ public interface ComponentManager {
 	ResourceManager getResourceManager();
 	RestExporter getRestExporter();
 	RecoveryManager getRecoveryManager();
+	JobController getJobController();
 	
 	JedisPool getJedisPool();
 

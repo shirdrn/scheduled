@@ -11,7 +11,6 @@ import org.apache.commons.logging.LogFactory;
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Preconditions;
 
-import cn.shiyanjun.platform.api.common.AbstractComponent;
 import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.utils.NamedThreadFactory;
 import cn.shiyanjun.platform.api.utils.Pair;
@@ -20,6 +19,7 @@ import cn.shiyanjun.platform.scheduled.api.ComponentManager;
 import cn.shiyanjun.platform.scheduled.api.JobFetcher;
 import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
 import cn.shiyanjun.platform.scheduled.api.Protocol;
+import cn.shiyanjun.platform.scheduled.common.AbstractJobController;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 import cn.shiyanjun.platform.scheduled.dao.entities.Job;
 import cn.shiyanjun.platform.scheduled.protocols.JobFetchProtocolManager;
@@ -32,7 +32,7 @@ import cn.shiyanjun.platform.scheduled.protocols.JobOrchestrationProtocolManager
  * 
  * @author yanjun
  */
-public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher {
+public class ScheduledJobFetcher extends AbstractJobController implements JobFetcher {
 
 	private static final Log LOG = LogFactory.getLog(ScheduledJobFetcher.class);
 	private static final int INITIAL_DELAY_TIME = 5000;
@@ -159,20 +159,27 @@ public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher
 				Integer jobId = null;
 				try{
 					jobId = job.getId();
-					JobStatus toStatus = JobStatus.FETCHED;
-					job.setStatus(toStatus.getCode()); 
-					jobPersistenceService.updateJobByID(job);
-					LOG.info("Job fetched: jobId=" + jobId + ", fromStatus=" + fromStatus + ", toStatus=" + toStatus);
-					LOG.info("Job info: id=" + jobId + ", params=" + job.getParams());
-					
-					int jobType = job.getJobType();
-					String jsonParams = job.getParams();
-					Protocol<RESTRequest, JSONObject> p = jobOrchestrationProtocolManager.select(jobOrchestrationProtocol);
-					JSONObject jobData = p.request(new RESTRequest(jsonParams, jobId, jobType));
-					
-					if(!jobData.isEmpty()) {
-						// prepare to execute queueing
-						manager.getQueueingManager().collect(jobData);
+					if(shouldCancelJob(jobId)) {
+						jobCancelled(jobId, () -> {
+							job.setStatus(JobStatus.CANCELLED.getCode()); 
+							jobPersistenceService.updateJobByID(job);
+						});
+					} else {
+						JobStatus toStatus = JobStatus.FETCHED;
+						job.setStatus(toStatus.getCode()); 
+						jobPersistenceService.updateJobByID(job);
+						LOG.info("Job fetched: jobId=" + jobId + ", fromStatus=" + fromStatus + ", toStatus=" + toStatus);
+						LOG.info("Job info: id=" + jobId + ", params=" + job.getParams());
+						
+						int jobType = job.getJobType();
+						String jsonParams = job.getParams();
+						Protocol<RESTRequest, JSONObject> p = jobOrchestrationProtocolManager.select(jobOrchestrationProtocol);
+						JSONObject jobData = p.request(new RESTRequest(jsonParams, jobId, jobType));
+						
+						if(!jobData.isEmpty()) {
+							// prepare to execute queueing
+							manager.getQueueingManager().collect(jobData);
+						}
 					}
 				} catch(Exception e) {
 					LOG.error("Fail to build: jobId=" + job.getId() + ", params=" + job.getParams(), e);

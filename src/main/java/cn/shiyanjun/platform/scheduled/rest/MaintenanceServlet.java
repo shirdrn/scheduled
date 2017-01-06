@@ -20,8 +20,8 @@ public class MaintenanceServlet extends AbstractServlet {
 	private static final Log LOG = LogFactory.getLog(MaintenanceServlet.class);
 	private static final long serialVersionUID = 1L;
 	
-	public MaintenanceServlet(ComponentManager protocol) {
-		super(protocol);
+	public MaintenanceServlet(ComponentManager manager) {
+		super(manager);
 	}
 	
 	protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {

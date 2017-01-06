@@ -31,7 +31,6 @@ import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Envelope;
 
 import cn.shiyanjun.platform.api.Context;
-import cn.shiyanjun.platform.api.common.AbstractComponent;
 import cn.shiyanjun.platform.api.constants.JSONKeys;
 import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.constants.TaskStatus;
@@ -47,6 +46,7 @@ import cn.shiyanjun.platform.scheduled.api.ResourceManager;
 import cn.shiyanjun.platform.scheduled.api.SchedulingManager;
 import cn.shiyanjun.platform.scheduled.api.SchedulingPolicy;
 import cn.shiyanjun.platform.scheduled.api.TaskPersistenceService;
+import cn.shiyanjun.platform.scheduled.common.AbstractJobController;
 import cn.shiyanjun.platform.scheduled.common.AbstractRunnableConsumer;
 import cn.shiyanjun.platform.scheduled.common.TaskOrder;
 import cn.shiyanjun.platform.scheduled.component.QueueingManagerImpl.QueueingContext;
@@ -66,7 +66,7 @@ import cn.shiyanjun.platform.scheduled.dao.entities.Task;
  * </ol>
  * @author yanjun
  */
-public class SchedulingManagerImpl extends AbstractComponent implements SchedulingManager {
+public class SchedulingManagerImpl extends AbstractJobController implements SchedulingManager {
 
 	private static final Log LOG = LogFactory.getLog(SchedulingManagerImpl.class);
 	protected final ComponentManager manager;
@@ -138,6 +138,157 @@ public class SchedulingManagerImpl extends AbstractComponent implements Scheduli
 		scheduledExecutorService.shutdown();
 		heartbeatMQAccessService.stop();
 		running = false;
+	}
+	
+	/**
+	 * Schedules a prepared task, and publish it to the MQ
+	 * 
+	 * @author yanjun
+	 */
+	private class SchedulingThread extends Thread {
+		
+		private final int scheduleTaskIntervalMillis = 5000;
+		
+		@Override
+		public void run() {
+			while(running) {
+				try {
+					// for each job in Redis queue
+					queueingManager.queueNames().forEach(queue -> {
+						resourceMetadataManager.taskTypes(queue).forEach(taskType -> {
+							LOG.debug("Loop for: queue=" + queue + ", taskType=" + taskType);
+							Optional<TaskOrder> offeredTask = schedulingPolicy.offerTask(queue, taskType);
+							offeredTask.ifPresent(task -> {
+								int jobId = task.getTask().getJobId();
+								if(shouldCancelJob(jobId)) {
+									// cancel a running job
+									jobCancelled(jobId, () -> {
+										try {
+											updateJobInfo(jobId, JobStatus.CANCELLED);
+											removeRedisJob(queue, jobId);
+										} finally {
+											releaseResource(queue, taskType);
+										}
+									});
+								} else {
+									if(!runningJobIdToInfos.containsKey(jobId)) {
+										JobInfo jobInfo = new JobInfo(jobId, queue, task.getTaskCount());
+										jobInfo.jobStatus = JobStatus.QUEUEING;
+										runningJobIdToInfos.putIfAbsent(jobId, jobInfo);
+									}
+									LOG.info("Prepare to schedule: queue=" + queue + ", taskType=" + taskType + ", " + task);
+									scheduleTask(queue, taskType, task, runningJobIdToInfos.get(task.getTask().getJobId()));
+								}
+							});
+						});
+					});
+					Thread.sleep(scheduleTaskIntervalMillis);
+				} catch (Exception e) {
+					LOG.warn("Fail to schedule task: ", e);
+				}
+			}
+		}
+		
+		private void scheduleTask(String queue, TaskType taskType, TaskOrder scheduledTask, JobInfo jobInfo) {
+			int jobId = scheduledTask.getTask().getJobId();
+			int taskId = scheduledTask.getTask().getId();
+			int serialNo = scheduledTask.getTask().getSerialNo();
+			int taskCount = scheduledTask.getTaskCount();
+			boolean alreadyPublished = false;
+			TaskID id = null;
+			try {
+				JSONObject job = getRedisJob(queue, jobId);
+				
+				JobStatus jobStatus = JobStatus.valueOf(job.getString(ScheduledConstants.JOB_STATUS));
+				TaskStatus taskStatus = TaskStatus.valueOf(job.getString(ScheduledConstants.TASK_STATUS));
+				
+				assert jobStatus == JobStatus.SCHEDULED;
+				assert taskStatus == TaskStatus.SCHEDULED;
+				
+				// update status: (job, task) = (SCHEDULED, SCHEDULED)
+				// in DB
+				if(serialNo == 1) {
+					updateJobInfo(jobId, jobStatus);
+				}
+				updateTaskStatusWithoutTime(jobId, taskId, serialNo, taskStatus);
+				// in memory
+				id = new TaskID(jobId, taskId, serialNo, taskType);
+				final TaskInfo taskInfo = new TaskInfo(id);
+				taskInfo.platformId = manager.getPlatformId();
+				taskInfo.scheduledTime = Time.now();
+				taskInfo.lastUpdatedTime = taskInfo.scheduledTime;
+				taskInfo.taskStatus = taskStatus;
+				runningTaskIdToInfos.putIfAbsent(id, taskInfo);
+				jobInfo.jobStatus = jobStatus;
+				if(serialNo == 1) {
+					jobInfo.lastUpdatedTime = Time.now();
+					logInMemoryJobStateChanged(jobInfo);
+				}
+				LinkedList<TaskID> tasks = runningJobToTaskList.get(jobId);
+				if(tasks == null) {
+					tasks = Lists.newLinkedList();
+					runningJobToTaskList.putIfAbsent(id.jobId, tasks);
+				}
+				tasks.add(id);
+				logInMemoryStateChanges(jobInfo, taskInfo);
+				
+				try {
+					// here we should update some job/task statuses after message is published to rabbit MQ,
+					// and lock the jobInfo to assure the time of these updates are ahead of returned task result processing
+					jobInfo.inMemJobUpdateLock.lock();
+					
+					// publish to the MQ
+					JSONObject taskMessage = buildTaskMessage(manager.getPlatformId(), scheduledTask.getTask(), taskCount);
+					alreadyPublished = taskMQAccessService.produceMessage(taskMessage.toJSONString());
+					
+					jobStatus = JobStatus.RUNNING;
+					taskStatus = TaskStatus.RUNNING;
+					
+					assert jobStatus == JobStatus.RUNNING;
+					assert taskStatus == TaskStatus.RUNNING;
+					
+					// update status: (job, task) = (RUNNING, RUNNING)
+					// in Redis
+					job.put(ScheduledConstants.JOB_STATUS, jobStatus.toString());
+					job.put(ScheduledConstants.TASK_STATUS, taskStatus.toString());
+					job.put(ScheduledConstants.LAST_UPDATE_TS, Time.now());
+					updateRedisState(jobId, queue, job);
+					
+					// in DB
+					if(serialNo == 1) {
+						updateJobInfo(jobId, jobStatus);
+					}
+					
+					updateStartedTask(jobId, taskId, serialNo, taskStatus);
+					
+					// in memory
+					jobInfo.jobStatus = jobStatus;
+					if(serialNo == 1) {
+						jobInfo.lastUpdatedTime = Time.now();
+						logInMemoryJobStateChanged(jobInfo);
+					}
+					taskInfo.taskStatus = taskStatus;
+					taskInfo.lastUpdatedTime = Time.now();
+					logInMemoryStateChanges(jobInfo, taskInfo);
+					
+					logTaskCounterChanged(queue);
+				} finally {
+					jobInfo.inMemJobUpdateLock.unlock();
+				}
+			} catch(Exception e) {
+				LOG.error("Fail to schedule task: jobId=" + jobId + ", taskId=" + taskId + ", serialNo=" + serialNo, e);
+				if(!alreadyPublished) {
+					releaseResource(queue, taskType);
+				}
+				
+				// update job status
+				updateJobInfo(jobId, JobStatus.FAILED);
+				
+				// handle in-memory completed task
+				handleInMemoryCompletedTask(id);
+			}
+		}
+		
 	}
 	
 	/**
@@ -460,145 +611,6 @@ public class SchedulingManagerImpl extends AbstractComponent implements Scheduli
 
 	}
 	
-	/**
-	 * Schedules a prepared task, and publish it to the MQ
-	 * 
-	 * @author yanjun
-	 */
-	private class SchedulingThread extends Thread {
-		
-		private final int scheduleTaskIntervalMillis = 5000;
-		
-		@Override
-		public void run() {
-			while(running) {
-				try {
-					// for each job in Redis queue
-					queueingManager.queueNames().forEach(queue -> {
-						resourceMetadataManager.taskTypes(queue).forEach(taskType -> {
-							LOG.debug("Loop for: queue=" + queue + ", taskType=" + taskType);
-							Optional<TaskOrder> offeredTask = schedulingPolicy.offerTask(queue, taskType);
-							offeredTask.ifPresent(task -> {
-								int jobId = task.getTask().getJobId();
-								if(!runningJobIdToInfos.containsKey(jobId)) {
-									JobInfo jobInfo = new JobInfo(jobId, queue, task.getTaskCount());
-									jobInfo.jobStatus = JobStatus.QUEUEING;
-									runningJobIdToInfos.putIfAbsent(jobId, jobInfo);
-								}
-								LOG.info("Prepare to schedule: queue=" + queue + ", taskType=" + taskType + ", " + task);
-								scheduleTask(queue, taskType, task, runningJobIdToInfos.get(task.getTask().getJobId()));
-							});
-						});
-					});
-					Thread.sleep(scheduleTaskIntervalMillis);
-				} catch (Exception e) {
-					LOG.warn("Fail to schedule task: ", e);
-				}
-			}
-		}
-		
-		private void scheduleTask(String queue, TaskType taskType, TaskOrder scheduledTask, JobInfo jobInfo) {
-			int jobId = scheduledTask.getTask().getJobId();
-			int taskId = scheduledTask.getTask().getId();
-			int serialNo = scheduledTask.getTask().getSerialNo();
-			int taskCount = scheduledTask.getTaskCount();
-			boolean alreadyPublished = false;
-			TaskID id = null;
-			try {
-				JSONObject job = getRedisJob(queue, jobId);
-				
-				JobStatus jobStatus = JobStatus.valueOf(job.getString(ScheduledConstants.JOB_STATUS));
-				TaskStatus taskStatus = TaskStatus.valueOf(job.getString(ScheduledConstants.TASK_STATUS));
-				
-				assert jobStatus == JobStatus.SCHEDULED;
-				assert taskStatus == TaskStatus.SCHEDULED;
-				
-				// update status: (job, task) = (SCHEDULED, SCHEDULED)
-				// in DB
-				if(serialNo == 1) {
-					updateJobInfo(jobId, jobStatus);
-				}
-				updateTaskStatusWithoutTime(jobId, taskId, serialNo, taskStatus);
-				// in memory
-				id = new TaskID(jobId, taskId, serialNo, taskType);
-				final TaskInfo taskInfo = new TaskInfo(id);
-				taskInfo.platformId = manager.getPlatformId();
-				taskInfo.scheduledTime = Time.now();
-				taskInfo.lastUpdatedTime = taskInfo.scheduledTime;
-				taskInfo.taskStatus = taskStatus;
-				runningTaskIdToInfos.putIfAbsent(id, taskInfo);
-				jobInfo.jobStatus = jobStatus;
-				if(serialNo == 1) {
-					jobInfo.lastUpdatedTime = Time.now();
-					logInMemoryJobStateChanged(jobInfo);
-				}
-				LinkedList<TaskID> tasks = runningJobToTaskList.get(jobId);
-				if(tasks == null) {
-					tasks = Lists.newLinkedList();
-					runningJobToTaskList.putIfAbsent(id.jobId, tasks);
-				}
-				tasks.add(id);
-				logInMemoryStateChanges(jobInfo, taskInfo);
-				
-				try {
-					// here we should update some job/task statuses after message is published to rabbit MQ,
-					// and lock the jobInfo to assure the time of these updates are ahead of returned task result processing
-					jobInfo.inMemJobUpdateLock.lock();
-					
-					// publish to the MQ
-					JSONObject taskMessage = buildTaskMessage(manager.getPlatformId(), scheduledTask.getTask(), taskCount);
-					alreadyPublished = taskMQAccessService.produceMessage(taskMessage.toJSONString());
-					
-					jobStatus = JobStatus.RUNNING;
-					taskStatus = TaskStatus.RUNNING;
-					
-					assert jobStatus == JobStatus.RUNNING;
-					assert taskStatus == TaskStatus.RUNNING;
-					
-					// update status: (job, task) = (RUNNING, RUNNING)
-					// in Redis
-					job.put(ScheduledConstants.JOB_STATUS, jobStatus.toString());
-					job.put(ScheduledConstants.TASK_STATUS, taskStatus.toString());
-					job.put(ScheduledConstants.LAST_UPDATE_TS, Time.now());
-					updateRedisState(jobId, queue, job);
-					
-					// in DB
-					if(serialNo == 1) {
-						updateJobInfo(jobId, jobStatus);
-					}
-					
-					updateStartedTask(jobId, taskId, serialNo, taskStatus);
-					
-					// in memory
-					jobInfo.jobStatus = jobStatus;
-					if(serialNo == 1) {
-						jobInfo.lastUpdatedTime = Time.now();
-						logInMemoryJobStateChanged(jobInfo);
-					}
-					taskInfo.taskStatus = taskStatus;
-					taskInfo.lastUpdatedTime = Time.now();
-					logInMemoryStateChanges(jobInfo, taskInfo);
-					
-					logTaskCounterChanged(queue);
-				} finally {
-					jobInfo.inMemJobUpdateLock.unlock();
-				}
-			} catch(Exception e) {
-				LOG.error("Fail to schedule task: jobId=" + jobId + ", taskId=" + taskId + ", serialNo=" + serialNo, e);
-				if(!alreadyPublished) {
-					releaseResource(queue, taskType);
-				}
-				
-				// update job status
-				updateJobInfo(jobId, JobStatus.FAILED);
-				
-				// handle in-memory completed task
-				handleInMemoryCompletedTask(id);
-			}
-		}
-		
-	}
-	
 	private JSONObject buildTaskMessage(String platformId, Task task, int taskCount) {
 		JSONObject taskMessage = new JSONObject(true);
 		taskMessage.put(ScheduledConstants.JOB_ID, task.getJobId());
@@ -872,11 +884,18 @@ public class SchedulingManagerImpl extends AbstractComponent implements Scheduli
 		LOG.info("In-db job state changed: jobId=" + jobId + ", updateTime=" + updateTime);
 	}
 	
-	private void updateJobStatus(JobInfo jobInfo, TaskID id, TaskStatus status, JSONObject taskResponse) throws Exception {
+	private void updateJobStatus(JobInfo jobInfo, TaskID id, TaskStatus taskStatus, JSONObject taskResponse) throws Exception {
 		int jobId = jobInfo.jobId;
 		String queue = jobInfo.queue;
 		int taskCount = jobInfo.taskCount;
 		LinkedList<TaskID> tasks = runningJobToTaskList.get(jobId);
+		
+		TaskStatus status = taskStatus;
+		JobStatus jobStatus = jobInfo.jobStatus;
+		if(shouldCancelJob(jobId)) {
+			status = TaskStatus.CANCELLED;
+			jobStatus = JobStatus.CANCELLED;
+		}
 		
 		// the last task was returned back
 		if(taskCount == tasks.size()) {
@@ -884,7 +903,7 @@ public class SchedulingManagerImpl extends AbstractComponent implements Scheduli
 			if(status == TaskStatus.SUCCEEDED) {
 				isSuccess = true;
 			}
-			JobStatus jobStatus = isSuccess ? JobStatus.SUCCEEDED : JobStatus.FAILED;
+			jobStatus = isSuccess ? JobStatus.SUCCEEDED : jobStatus;
 			removeRedisJob(queue, jobId);
 			
 			updateJobInfo(jobId, jobStatus);
@@ -910,17 +929,23 @@ public class SchedulingManagerImpl extends AbstractComponent implements Scheduli
 				taskInfo.taskStatus = status;
 				logInMemoryStateChanges(jobInfo, taskInfo);
 			} else {
-				// task was failed, remove from Redis queue, and update job status to FAILED in job database.
+				// task was failed/cancelled, remove from Redis queue, and update job status to FAILED in job database.
 				// TODO later maybe we should give it a flexible policy, such as giving a chance to be rescheduled.
 				removeRedisJob(queue, jobId);
 				
-				updateJobInfo(jobId, JobStatus.FAILED);
+				updateJobInfo(jobId, jobStatus);
 				
 				// update in-memroy job/task status
-				jobInfo.jobStatus = JobStatus.FAILED;
+				jobInfo.jobStatus = jobStatus;
 				taskInfo.taskStatus = status;
 				logInMemoryStateChanges(jobInfo, taskInfo);
 			}
+		}
+		
+		if(shouldCancelJob(jobId)) {
+			jobCancelled(jobId, () -> {
+				// do nothing
+			}); 
 		}
 		
 		// handle in-memory completed task

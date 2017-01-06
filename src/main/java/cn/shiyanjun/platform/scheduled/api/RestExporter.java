@@ -15,9 +15,24 @@ public interface RestExporter {
 	Collection<String> getWaitingJobs(String queue, String jobId);
 	void prioritize(String queue, int jobId);
 	Map<Integer, JSONObject> getQueuedJobStatuses(String queue);
+	/**
+	 * Get all Redis queues' statuses
+	 * @return
+	 */
 	Map<String, JSONObject> getQueueStatuses();
+	/**
+	 * Cancel a running job.
+	 * @param jobId
+	 * @return
+	 */
+	boolean cancelJob(int jobId);
 	
-	
+	/**
+	 * Update soft constraint amount for a specified task type resource.
+	 * @param queue
+	 * @param taskType
+	 * @param amount
+	 */
 	void updateResourceAmount(String queue, TaskType taskType, int amount);
 	
 	void setSchedulingOpened(boolean isSchedulingOpened);
