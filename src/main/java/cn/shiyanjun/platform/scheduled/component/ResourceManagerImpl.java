@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -17,6 +18,7 @@ import com.google.common.collect.Sets;
 import cn.shiyanjun.platform.api.Context;
 import cn.shiyanjun.platform.api.constants.TaskType;
 import cn.shiyanjun.platform.scheduled.api.ResourceManager;
+import cn.shiyanjun.platform.scheduled.common.StatCounter;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 
 public class ResourceManagerImpl implements ResourceManager {
@@ -26,7 +28,8 @@ public class ResourceManagerImpl implements ResourceManager {
 	private volatile Map<String, Map<TaskType, AtomicInteger>> counters = Maps.newHashMap();
 	private final Map<String, Set<TaskType>> taskTypes = Maps.newHashMap();
 	
-	private final Map<String, TaskStatCounter> statCounters = Maps.newHashMap();
+	private final Map<String, JobStatCounter> jobStatCounters = Maps.newHashMap();
+	private final Map<String, TaskStatCounter> taskStatCounters = Maps.newHashMap();
 	private final Map<TaskType, Integer> reportedAvailableResources = Maps.newHashMap();
 	
 	public ResourceManagerImpl(Context context) {
@@ -38,7 +41,8 @@ public class ResourceManagerImpl implements ResourceManager {
 			maxConcurrencies.put(queue, Maps.newHashMap());
 			counters.put(queue, Maps.newHashMap());
 			taskTypes.put(queue, Sets.newHashSet());
-			statCounters.put(queue, new TaskStatCounter(queue));
+			jobStatCounters.put(queue, new JobStatCounter(queue));
+			taskStatCounters.put(queue, new TaskStatCounter(queue));
 			String[] rs = aa[1].substring(0, aa[1].length()-1).split(";");
 			for(String t : rs) {
 				String[] ts = t.split("\\:");
@@ -79,8 +83,13 @@ public class ResourceManagerImpl implements ResourceManager {
 	}
 	
 	@Override
+	public JobStatCounter getJobStatCounter(String queue) {
+		return jobStatCounters.get(queue);
+	}
+	
+	@Override
 	public TaskStatCounter getTaskStatCounter(String queue) {
-		return statCounters.get(queue);
+		return taskStatCounters.get(queue);
 	}
 	
 	@Override
@@ -116,28 +125,53 @@ public class ResourceManagerImpl implements ResourceManager {
 	public Set<TaskType> taskTypes(String queue) {
 		return Collections.unmodifiableSet(taskTypes.get(queue));
 	}
-
-	public static class TaskStatCounter {
+	
+	public static class JobStatCounter extends StatCounter {
 		
-		private final String queue;
+		private volatile int succeededJobCount = 0;
+		private volatile int failedJobCount = 0;
+		private volatile int timeoutJobCount = 0;
+		private volatile int cancelledJobCount = 0;
 		
-		public TaskStatCounter(String queue) {
-			this.queue = queue;
+		public JobStatCounter(String queue) {
+			super(queue);
 		}
 		
-		private volatile int scheduledTaskCount = 0;
-		private volatile int returnedTaskCount = 0;
+		public void incrementSucceededJobCount() {
+			succeededJobCount++;
+		}
+		
+		public void incrementFailedJobCount() {
+			failedJobCount++;
+		}
+		
+		public void incrementTimeoutJobCount() {
+			timeoutJobCount++;
+		}
+		
+		public void incrementCancelledJobCount() {
+			cancelledJobCount++;
+		}
+		
+		public JSONObject toJSONObject() {
+			JSONObject jo = new JSONObject(true);
+			jo.put("succeededJobCount", succeededJobCount);
+			jo.put("failedJobCount", failedJobCount);
+			jo.put("timeoutJobCount", timeoutJobCount);
+			jo.put("cancelledJobCount", cancelledJobCount);
+			return jo;
+		}
+	}
+
+	public static class TaskStatCounter extends StatCounter {
+		
+		public TaskStatCounter(String queue) {
+			super(queue);
+		}
+		
 		private volatile int succeededTaskCount = 0;
 		private volatile int failedTaskCount = 0;
 		private volatile int timeoutTaskCount = 0;
-		
-		public void incrementScheduledTaskCount() {
-			scheduledTaskCount++;
-		}
-		
-		public void incrementReturnedTaskCount() {
-			returnedTaskCount++;
-		}
 		
 		public void incrementSucceededTaskCount() {
 			succeededTaskCount++;
@@ -151,29 +185,14 @@ public class ResourceManagerImpl implements ResourceManager {
 			timeoutTaskCount++;
 		}
 		
-		public int getScheduledTaskCount() {
-			return scheduledTaskCount;
+		public JSONObject toJSONObject() {
+			JSONObject jo = new JSONObject(true);
+			jo.put("succeededTaskCount", succeededTaskCount);
+			jo.put("failedTaskCount", failedTaskCount);
+			jo.put("timeoutTaskCount", timeoutTaskCount);
+			return jo;
 		}
 
-		public int getReturnedTaskCount() {
-			return returnedTaskCount;
-		}
-
-		public int getSucceededTaskCount() {
-			return succeededTaskCount;
-		}
-
-		public int getFailedTaskCount() {
-			return failedTaskCount;
-		}
-
-		public int getTimeoutTaskCount() {
-			return timeoutTaskCount;
-		}
-
-		public String getQueue() {
-			return queue;
-		}
 	}
 
 	@Override

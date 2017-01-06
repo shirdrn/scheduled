@@ -89,7 +89,7 @@ class StaleJobChecker implements Runnable {
 				List<Task> tasks = sched.getTasksFor(job.getId());
 				JobInfo jobInfo = sched.runningJobIdToInfos.get(jobId);
 				if(jobInfo == null) {
-					sched.updateJobInfo(job.getId(), JobStatus.FAILED);
+					sched.updateJobInfo(job.getId(), JobStatus.TIMEOUT);
 				} else {
 					String queue = jobInfo.queue;
 					tasks.forEach(task -> {
@@ -101,8 +101,9 @@ class StaleJobChecker implements Runnable {
 									if(ti != null && ti.taskStatus == TaskStatus.RUNNING 
 											&& sched.manager.getPlatformId().equals(ti.platformId)) {
 										sched.releaseResource(queue, ti.taskType);
-										sched.updateTaskInfo(ti.id, TaskStatus.FAILED);
+										sched.updateTaskInfo(ti.id, TaskStatus.TIMEOUT);
 										sched.incrementTimeoutTaskCount(queue);
+										sched.updateJobStatCounter(queue, JobStatus.TIMEOUT);
 									}
 								});
 							}
@@ -110,7 +111,7 @@ class StaleJobChecker implements Runnable {
 					});
 					try {
 						jobInfo.inMemJobUpdateLock.lock();
-						jobInfo.jobStatus = JobStatus.FAILED;
+						jobInfo.jobStatus = JobStatus.TIMEOUT;
 					} finally {
 						jobInfo.inMemJobUpdateLock.unlock();
 					}
@@ -141,7 +142,7 @@ class StaleJobChecker implements Runnable {
 				String queue = jobInfo.queue;
 				try {
 					jobInfo.inMemJobUpdateLock.lock();
-					jobInfo.jobStatus = JobStatus.FAILED;
+					jobInfo.jobStatus = JobStatus.TIMEOUT;
 				} finally {
 					jobInfo.inMemJobUpdateLock.unlock();
 				}
@@ -153,16 +154,17 @@ class StaleJobChecker implements Runnable {
 						if(ti != null && ti.taskStatus == TaskStatus.RUNNING 
 								&& sched.manager.getPlatformId().equals(ti.platformId)) {
 							sched.releaseResource(queue, ti.taskType);
-							sched.updateTaskInfo(ti.id, TaskStatus.FAILED);
+							sched.updateTaskInfo(ti.id, TaskStatus.TIMEOUT);
 							sched.incrementTimeoutTaskCount(queue);
 						}
 					});
 				}
-				sched.updateJobInfo(jobId, JobStatus.FAILED);
+				sched.updateJobInfo(jobId, JobStatus.TIMEOUT);
 				
 				// handle in-memory completed job
 				sched.handleInMemoryCompletedTask(jobId);
 				sched.removeRedisJob(queue, jobId);
+				sched.updateJobStatCounter(queue, JobStatus.TIMEOUT);
 			}
 		});
 	}
@@ -201,7 +203,7 @@ class StaleJobChecker implements Runnable {
 		int jobId = jobInfo.jobId;
 		jobInfo.lastUpdatedTime = now;
 		timeoutJobIdToInfos.putIfAbsent(jobId, jobInfo);
-		jobInfo.jobStatus = JobStatus.FAILED;
+		jobInfo.jobStatus = JobStatus.TIMEOUT;
 		if(timeoutJobIdToInfos.size() > 2 * keptTimeoutJobMaxCount) {
 			timeoutJobIdToInfos.values().stream()
 			.sorted((x, y) -> x.lastUpdatedTime - y.lastUpdatedTime < 0 ? -1 : 1)

@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.Set;
 
 import cn.shiyanjun.platform.api.constants.TaskType;
+import cn.shiyanjun.platform.scheduled.component.ResourceManagerImpl.JobStatCounter;
 import cn.shiyanjun.platform.scheduled.component.ResourceManagerImpl.TaskStatCounter;
 
 public interface ResourceManager {
@@ -14,6 +15,7 @@ public interface ResourceManager {
 	Set<TaskType> taskTypes(String queue);
 	
 	int getRunningTaskCount(String queue);
+	JobStatCounter getJobStatCounter(String queue);
 	TaskStatCounter getTaskStatCounter(String queue);
 	
 	void updateReportedResources(Map<TaskType, Integer> resources);

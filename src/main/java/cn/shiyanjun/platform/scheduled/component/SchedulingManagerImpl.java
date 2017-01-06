@@ -50,6 +50,7 @@ import cn.shiyanjun.platform.scheduled.common.AbstractJobController;
 import cn.shiyanjun.platform.scheduled.common.AbstractRunnableConsumer;
 import cn.shiyanjun.platform.scheduled.common.TaskOrder;
 import cn.shiyanjun.platform.scheduled.component.QueueingManagerImpl.QueueingContext;
+import cn.shiyanjun.platform.scheduled.component.ResourceManagerImpl.JobStatCounter;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 import cn.shiyanjun.platform.scheduled.dao.entities.Job;
@@ -717,7 +718,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 					LOG.info("Task succeeded: " + taskResponse);
 					taskResponseHandlingController.releaseResource(queue, id.taskType, isTenuredTasksResponse);
 					updateTaskInfo(id, taskStatus, taskResponse);
-					updateJobStatus(jobInfo, id, taskStatus, taskResponse);
+					updateJobStatus(jobInfo, id, taskStatus);
 					
 					taskResponseHandlingController.incrementSucceededTaskCount(queue, taskResponse);
 					logTaskCounterChanged(queue);
@@ -726,7 +727,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 					LOG.info("Task failed: " + taskResponse);
 					taskResponseHandlingController.releaseResource(queue, id.taskType, isTenuredTasksResponse);
 					updateTaskInfo(id, taskStatus, taskResponse);
-					updateJobStatus(jobInfo, id, taskStatus, taskResponse);
+					updateJobStatus(jobInfo, id, taskStatus);
 					
 					taskResponseHandlingController.incrementFailedTaskCount(queue, taskResponse);
 					logTaskCounterChanged(queue);
@@ -745,10 +746,9 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 	}
 	
 	private void logTaskCounterChanged(final String queue) {
-		LOG.info("Task counter changed: queue=" + queue +
-				", succeededCount=" + resourceMetadataManager.getTaskStatCounter(queue).getSucceededTaskCount() +
-				", failedCount=" + resourceMetadataManager.getTaskStatCounter(queue).getFailedTaskCount() +
-				", runningTaskCount=" + resourceMetadataManager.getRunningTaskCount(queue));
+		JSONObject stat = resourceMetadataManager.getTaskStatCounter(queue).toJSONObject();
+		stat.put("runningTaskCount", resourceMetadataManager.getRunningTaskCount(queue));
+		LOG.info("Task counter changed: queue=" + queue + ", counter=" + stat.toJSONString());
 	}
 	
 	/**
@@ -884,7 +884,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		LOG.info("In-db job state changed: jobId=" + jobId + ", updateTime=" + updateTime);
 	}
 	
-	private void updateJobStatus(JobInfo jobInfo, TaskID id, TaskStatus taskStatus, JSONObject taskResponse) throws Exception {
+	private void updateJobStatus(JobInfo jobInfo, TaskID id, TaskStatus taskStatus) throws Exception {
 		int jobId = jobInfo.jobId;
 		String queue = jobInfo.queue;
 		int taskCount = jobInfo.taskCount;
@@ -950,11 +950,36 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		
 		// handle in-memory completed task
 		handleInMemoryCompletedTask(id);
+		
+		updateJobStatCounter(queue, jobStatus);
 	}
 	
+	void updateJobStatCounter(String queue, JobStatus jobStatus) {
+		final JobStatCounter jobStatCounter = resourceMetadataManager.getJobStatCounter(queue);
+		switch(jobStatus) {
+			case SUCCEEDED:
+				jobStatCounter.incrementSucceededJobCount();
+				break;
+			case FAILED:
+				jobStatCounter.incrementFailedJobCount();
+				break;
+			case CANCELLED:
+				jobStatCounter.incrementCancelledJobCount();
+				break;
+			case TIMEOUT:
+				jobStatCounter.incrementTimeoutJobCount();
+				break;
+			default:
+		}
+		LOG.info("Job counter changed: queue=" + queue + ", counter=" + jobStatCounter.toJSONObject());
+	}
+
 	void handleInMemoryCompletedTask(int jobId) {
 		JobInfo current = runningJobIdToInfos.get(jobId);
-		if(current != null && (current.jobStatus == JobStatus.SUCCEEDED || current.jobStatus == JobStatus.FAILED)) {
+		if(current != null && (current.jobStatus == JobStatus.SUCCEEDED 
+				|| current.jobStatus == JobStatus.FAILED 
+				|| current.jobStatus == JobStatus.TIMEOUT 
+				|| current.jobStatus == JobStatus.CANCELLED)) {
 			LOG.info("Moving in-mem job: runningJobIdToInfos -> completedJobIdToInfos");
 			runningJobToTaskList.remove(jobId).stream().forEach(id -> {
 				TaskInfo ti = runningTaskIdToInfos.remove(id);
