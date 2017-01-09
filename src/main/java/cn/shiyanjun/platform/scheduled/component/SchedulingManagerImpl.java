@@ -141,6 +141,17 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		running = false;
 	}
 	
+	@Override
+	public boolean cancelJob(int jobId) {
+		super.cancelJob(jobId);
+		try {
+			updateJobInfo(jobId, JobStatus.CANCELLING);
+		} catch (Exception e) {
+			return false;
+		}
+		return true;
+	}
+	
 	/**
 	 * Schedules a prepared task, and publish it to the MQ
 	 * 
