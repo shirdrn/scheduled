@@ -145,6 +145,20 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 	public boolean cancelJob(int jobId) {
 		super.cancelJob(jobId);
 		try {
+			JobInfo ji = runningJobIdToInfos.get(jobId);
+			if(ji != null) {
+				ji.jobStatus = JobStatus.CANCELLING;
+				ji.lastUpdatedTime = Time.now();
+				logInMemoryJobStateChanged(ji);
+				
+				// update Redis job status to CANCELLING
+				String queue = ji.queue;
+				JSONObject job = getRedisJob(queue, jobId);
+				job.put(ScheduledConstants.JOB_STATUS, JobStatus.CANCELLING.toString());
+				job.put(ScheduledConstants.LAST_UPDATE_TS, Time.now());
+				updateRedisState(jobId, queue, job);
+			}
+			// update DB
 			updateJobInfo(jobId, JobStatus.CANCELLING);
 		} catch (Exception e) {
 			return false;
@@ -729,7 +743,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 					LOG.info("Task succeeded: " + taskResponse);
 					taskResponseHandlingController.releaseResource(queue, id.taskType, isTenuredTasksResponse);
 					updateTaskInfo(id, taskStatus, taskResponse);
-					updateJobStatus(jobInfo, id, taskStatus);
+					processJobStatus(jobInfo, id, taskStatus);
 					
 					taskResponseHandlingController.incrementSucceededTaskCount(queue, taskResponse);
 					logTaskCounterChanged(queue);
@@ -738,7 +752,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 					LOG.info("Task failed: " + taskResponse);
 					taskResponseHandlingController.releaseResource(queue, id.taskType, isTenuredTasksResponse);
 					updateTaskInfo(id, taskStatus, taskResponse);
-					updateJobStatus(jobInfo, id, taskStatus);
+					processJobStatus(jobInfo, id, taskStatus);
 					
 					taskResponseHandlingController.incrementFailedTaskCount(queue, taskResponse);
 					logTaskCounterChanged(queue);
@@ -895,7 +909,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		LOG.info("In-db job state changed: jobId=" + jobId + ", updateTime=" + updateTime);
 	}
 	
-	private void updateJobStatus(JobInfo jobInfo, TaskID id, TaskStatus taskStatus) throws Exception {
+	private void processJobStatus(JobInfo jobInfo, TaskID id, TaskStatus taskStatus) throws Exception {
 		int jobId = jobInfo.jobId;
 		String queue = jobInfo.queue;
 		int taskCount = jobInfo.taskCount;

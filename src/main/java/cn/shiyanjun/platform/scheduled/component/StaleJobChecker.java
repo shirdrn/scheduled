@@ -135,14 +135,24 @@ class StaleJobChecker implements Runnable {
 		sched.runningJobIdToInfos.keySet().forEach(jobId -> {
 			JobInfo jobInfo = sched.runningJobIdToInfos.get(jobId);
 			
-			// check timeout jobs  
+			// check timeout jobs (RUNNING || CANCELLED)
 			boolean isTimeout = Time.now() - jobInfo.lastUpdatedTime > staleTaskMaxThresholdMillis;
 			if(jobInfo.jobStatus != JobStatus.SUCCEEDED && jobInfo.jobStatus != JobStatus.FAILED && isTimeout) {
 				LOG.info("Stale in-mem job: jobInfo=" + jobInfo);
 				String queue = jobInfo.queue;
+				final JobStatus targetJobStatus;
 				try {
 					jobInfo.inMemJobUpdateLock.lock();
-					jobInfo.jobStatus = JobStatus.TIMEOUT;
+					switch(jobInfo.jobStatus) {
+						case RUNNING:
+							targetJobStatus = JobStatus.TIMEOUT;
+							break;
+						case CANCELLED:
+							targetJobStatus = JobStatus.CANCELLED;
+							break;
+						default:
+							targetJobStatus = JobStatus.FAILED;
+					}
 				} finally {
 					jobInfo.inMemJobUpdateLock.unlock();
 				}
@@ -151,20 +161,27 @@ class StaleJobChecker implements Runnable {
 				if(inMemTasks != null) {
 					inMemTasks.forEach(id -> {
 						TaskInfo ti = sched.runningTaskIdToInfos.get(id);
-						if(ti != null && ti.taskStatus == TaskStatus.RUNNING 
+						if(ti != null && (ti.taskStatus == TaskStatus.RUNNING || targetJobStatus == JobStatus.CANCELLED)
 								&& sched.manager.getPlatformId().equals(ti.platformId)) {
 							sched.releaseResource(queue, ti.taskType);
 							sched.updateTaskInfo(ti.id, TaskStatus.TIMEOUT);
 							sched.incrementTimeoutTaskCount(queue);
+							// clear cancelled job from memory
+							if(targetJobStatus == JobStatus.CANCELLED) {
+								sched.jobCancelled(jobId, () -> {
+									jobInfo.lastUpdatedTime = Time.now();
+									LOG.info("Cancelled job timeout: jobId=" + jobId + "jobInfo=" + jobInfo);
+								});
+							}
 						}
 					});
 				}
-				sched.updateJobInfo(jobId, JobStatus.TIMEOUT);
+				sched.updateJobInfo(jobId, targetJobStatus);
 				
 				// handle in-memory completed job
 				sched.handleInMemoryCompletedTask(jobId);
 				sched.removeRedisJob(queue, jobId);
-				sched.updateJobStatCounter(queue, JobStatus.TIMEOUT);
+				sched.updateJobStatCounter(queue, targetJobStatus);
 			}
 		});
 	}
@@ -189,7 +206,7 @@ class StaleJobChecker implements Runnable {
 					
 					// clear timeout job with RUNNING status && in Redis queue
 					long now = Time.now();
-					if(jobStatus == JobStatus.RUNNING 
+					if((jobStatus == JobStatus.RUNNING || jobStatus == JobStatus.CANCELLING)
 							&& now - lastUpdateTs > staleTaskMaxThresholdMillis) {
 						sched.removeRedisJob(queue, jobId);
 						LOG.warn("Stale job in Redis purged: queue=" + queue + ", job=" + job);
