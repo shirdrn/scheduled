@@ -17,6 +17,7 @@ import cn.shiyanjun.platform.api.Context;
 import cn.shiyanjun.platform.scheduled.api.Protocol;
 import cn.shiyanjun.platform.scheduled.common.AbstractProtocolManager;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
+import cn.shiyanjun.platform.scheduled.constants.ProtocolType;
 import cn.shiyanjun.platform.scheduled.protocols.JobOrchestrationProtocolManager.RESTRequest;
 
 public final class JobOrchestrationProtocolManager extends AbstractProtocolManager<Protocol<RESTRequest, JSONObject>> {
@@ -97,10 +98,6 @@ public final class JobOrchestrationProtocolManager extends AbstractProtocolManag
 	@Override
 	public Enum<?> ofType(String protocolType) {
 		return ProtocolType.valueOf(protocolType);
-	}
-	
-	public enum ProtocolType {
-		REST
 	}
 	
 }

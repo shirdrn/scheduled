@@ -12,6 +12,7 @@ import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.scheduled.api.ComponentManager;
 import cn.shiyanjun.platform.scheduled.api.Protocol;
 import cn.shiyanjun.platform.scheduled.common.AbstractProtocolManager;
+import cn.shiyanjun.platform.scheduled.constants.ProtocolType;
 import cn.shiyanjun.platform.scheduled.dao.entities.Job;
 
 public final class JobFetchProtocolManager extends AbstractProtocolManager<Protocol<JobStatus, List<Job>>> {
@@ -46,10 +47,6 @@ public final class JobFetchProtocolManager extends AbstractProtocolManager<Proto
 	@Override
 	public Enum<?> ofType(String protocolType) {
 		return ProtocolType.valueOf(protocolType);
-	}
-	
-	public enum ProtocolType {
-		MYSQL
 	}
 
 }
