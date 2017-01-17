@@ -18,7 +18,7 @@ public interface ScheduledConstants {
 	String JOB_ID = "jobId";
 	String JOB_STATUS = "jobStatus";
 	String JOB_TYPE = "jobType";
-	String SERIAL_NO = "serialNo";
+	String SEQ_NO = "seqNo";
 	String STAGES = "stages";
 	String STATUS = "status";
 	String TASK_ID = "taskId";

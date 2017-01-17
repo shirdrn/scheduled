@@ -70,7 +70,7 @@ public class RecoveryManagerImpl implements RecoveryManager {
 						switch(type) {
 							case ScheduledConstants.HEARTBEAT_TYPE_TASK_PROGRESS:
 								
-								// {"type":"taskProgress","platform_id":"7fe13e9879314da38bb7abc8b61657bb","tasks":[{"result":{"traceId":"1480402382967","callId":"1","resultCount":"1423","message":"SUCCESS","status":5},"jobId":1,"taskType":1,"taskId":1,"serialNo":1,"status":"SUCCEEDED"}]}
+								// {"type":"taskProgress","platform_id":"7fe13e9879314da38bb7abc8b61657bb","tasks":[{"result":{"traceId":"1480402382967","callId":"1","resultCount":"1423","message":"SUCCESS","status":5},"jobId":1,"taskType":1,"taskId":1,"seqNo":1,"status":"SUCCEEDED"}]}
 								// add flag 'needRecovering' to a tasks response
 								result.put(ScheduledConstants.NEED_RECOVERING, ScheduledConstants.YES);
 								needRecoveredTaskQueue.add(result);
@@ -142,7 +142,7 @@ public class RecoveryManagerImpl implements RecoveryManager {
 					JSONObject taskResponse = tasks.getJSONObject(i);
 					int jobId = taskResponse.getIntValue(ScheduledConstants.JOB_ID);
 					int taskId = taskResponse.getIntValue(ScheduledConstants.TASK_ID);
-					int serialNo = taskResponse.getIntValue(ScheduledConstants.SERIAL_NO);
+					int seqNo = taskResponse.getIntValue(ScheduledConstants.SEQ_NO);
 					int taskCount = taskResponse.getIntValue(ScheduledConstants.TASK_COUNT);
 					TaskStatus taskStatus = TaskStatus.valueOf(taskResponse.getString(ScheduledConstants.STATUS));
 					
@@ -160,7 +160,7 @@ public class RecoveryManagerImpl implements RecoveryManager {
 								// job in DB with status not in (FAILED, SUCCEED)
 								// task in response with status in (FAILED, SUCCEED)
 								if(taskStatus == TaskStatus.FAILED 
-										|| (taskStatus == TaskStatus.SUCCEEDED && taskCount == serialNo)) {
+										|| (taskStatus == TaskStatus.SUCCEEDED && taskCount == seqNo)) {
 									processCompletedJob(jobId, taskResponse, taskStatus);
 									completedJobIds.add(jobId);
 								} else {

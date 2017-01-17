@@ -128,7 +128,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		
 		scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new NamedThreadFactory("STALE-CHECKER"));
 		// default 15 minutes
-		final int staleTaskCheckIntervalSecs = context.getInt(ConfigKeys.SCHEDULED_STALE_TASK_CHECK_INTERVAL_SECS, 900);
+		final int staleTaskCheckIntervalSecs = context.getInt(ConfigKeys.SCHEDULED_STALE_JOB_CHECK_INTERVAL_SECS, 900);
 		scheduledExecutorService.scheduleAtFixedRate(
 				staleJobChecker, staleTaskCheckIntervalSecs, staleTaskCheckIntervalSecs, TimeUnit.SECONDS);
 	}
@@ -218,7 +218,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		private void scheduleTask(String queue, TaskType taskType, TaskOrder scheduledTask, JobInfo jobInfo) {
 			int jobId = scheduledTask.getTask().getJobId();
 			int taskId = scheduledTask.getTask().getId();
-			int serialNo = scheduledTask.getTask().getSerialNo();
+			int seqNo = scheduledTask.getTask().getSeqNo();
 			int taskCount = scheduledTask.getTaskCount();
 			boolean alreadyPublished = false;
 			TaskID id = null;
@@ -233,12 +233,12 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 				
 				// update status: (job, task) = (SCHEDULED, SCHEDULED)
 				// in DB
-				if(serialNo == 1) {
+				if(seqNo == 1) {
 					updateJobInfo(jobId, jobStatus);
 				}
-				updateTaskStatusWithoutTime(jobId, taskId, serialNo, taskStatus);
+				updateTaskStatusWithoutTime(jobId, taskId, seqNo, taskStatus);
 				// in memory
-				id = new TaskID(jobId, taskId, serialNo, taskType);
+				id = new TaskID(jobId, taskId, seqNo, taskType);
 				final TaskInfo taskInfo = new TaskInfo(id);
 				taskInfo.platformId = manager.getPlatformId();
 				taskInfo.scheduledTime = Time.now();
@@ -246,7 +246,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 				taskInfo.taskStatus = taskStatus;
 				runningTaskIdToInfos.putIfAbsent(id, taskInfo);
 				jobInfo.jobStatus = jobStatus;
-				if(serialNo == 1) {
+				if(seqNo == 1) {
 					jobInfo.lastUpdatedTime = Time.now();
 					logInMemoryJobStateChanged(jobInfo);
 				}
@@ -281,15 +281,15 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 					updateRedisState(jobId, queue, job);
 					
 					// in DB
-					if(serialNo == 1) {
+					if(seqNo == 1) {
 						updateJobInfo(jobId, jobStatus);
 					}
 					
-					updateStartedTask(jobId, taskId, serialNo, taskStatus);
+					updateStartedTask(jobId, taskId, seqNo, taskStatus);
 					
 					// in memory
 					jobInfo.jobStatus = jobStatus;
-					if(serialNo == 1) {
+					if(seqNo == 1) {
 						jobInfo.lastUpdatedTime = Time.now();
 						logInMemoryJobStateChanged(jobInfo);
 					}
@@ -302,7 +302,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 					jobInfo.inMemJobUpdateLock.unlock();
 				}
 			} catch(Exception e) {
-				LOG.error("Fail to schedule task: jobId=" + jobId + ", taskId=" + taskId + ", serialNo=" + serialNo, e);
+				LOG.error("Fail to schedule task: jobId=" + jobId + ", taskId=" + taskId + ", seqNo=" + seqNo, e);
 				if(!alreadyPublished) {
 					releaseResource(queue, taskType);
 				}
@@ -349,7 +349,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 	 * <ul>
 	 * 	<li>Task progress heartbeat message</li>
 	 * 		<pre>
-	 * 		{"type":"taskProgress","tasks":[{"result":{"resultCount":6910757,"status":5},"jobId":1328,"taskType":2,"taskId":3404,"serialNo":3,"status":"SUCCEEDED"}]}</br>
+	 * 		{"type":"taskProgress","tasks":[{"result":{"resultCount":6910757,"status":5},"jobId":1328,"taskType":2,"taskId":3404,"seqNo":3,"status":"SUCCEEDED"}]}</br>
 	 * 		</pre>
 	 * </ul>
 	 * 
@@ -572,10 +572,10 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 				LOG.info("Recovering task in-mem structures...");
 				int jobId = taskResponse.getIntValue(ScheduledConstants.JOB_ID);
 				int taskId = taskResponse.getIntValue(ScheduledConstants.TASK_ID);
-				int serialNo = taskResponse.getIntValue(ScheduledConstants.SERIAL_NO);
+				int seqNo = taskResponse.getIntValue(ScheduledConstants.SEQ_NO);
 				int taskTypeCode = taskResponse.getIntValue(ScheduledConstants.TASK_TYPE);
 				TaskType taskType = TaskType.fromCode(taskTypeCode).get();
-				TaskID id = new TaskID(jobId, taskId, serialNo, taskType);
+				TaskID id = new TaskID(jobId, taskId, seqNo, taskType);
 				String oldPlatformId = taskResponse.getString(ScheduledConstants.PLATFORM_ID);
 				// check job status in Redis queue
 				Job ujob = jobPersistenceService.retrieveJob(jobId);
@@ -611,7 +611,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 							tasks.add(id);
 							LOG.info("Task in-mem structures recovered: jobId=" + jobId + 
 									", taskCount=" + taskCount + ", jobStatus=" + jobInfo.jobStatus + 
-									", taskId=" + id.taskId + ", serialNo=" + id.serialNo + ", taskStatus=" + taskInfo.taskStatus);
+									", taskId=" + id.taskId + ", seq=" + id.seqNo + ", taskStatus=" + taskInfo.taskStatus);
 						}
 					} else {
 						LOG.warn("Task timeout: " + taskResponse);
@@ -643,7 +643,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
     	taskMessage.put(ScheduledConstants.PLATFORM_ID, platformId);
     	taskMessage.put(ScheduledConstants.TASK_ID, task.getId());
     	taskMessage.put(ScheduledConstants.ROLE, task.getTaskType());
-        taskMessage.put(ScheduledConstants.SERIAL_NO, task.getSerialNo());
+        taskMessage.put(ScheduledConstants.SEQ_NO, task.getSeqNo());
         taskMessage.put(ScheduledConstants.TASK_COUNT, taskCount);
         taskMessage.put(ScheduledConstants.PARAMS, task.getParams());
         return taskMessage;
@@ -677,13 +677,13 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		private void handleSingleTaskResponse(JSONObject taskResponse, String platformId,
 				boolean isTenuredTasksResponse, final Channel channel, long deliveryTag) throws Exception {
 			int jobId = taskResponse.getIntValue(ScheduledConstants.JOB_ID);
-			int serialNo = taskResponse.getIntValue(ScheduledConstants.SERIAL_NO);
+			int seqNo = taskResponse.getIntValue(ScheduledConstants.SEQ_NO);
 			int taskTypeCode = taskResponse.getIntValue(ScheduledConstants.TASK_TYPE);
 			int taskId = taskResponse.getIntValue(ScheduledConstants.TASK_ID);
 			String status = taskResponse.getString(ScheduledConstants.STATUS);
 			TaskStatus newTaskStatus = TaskStatus.valueOf(status);
 			TaskType taskType = TaskType.fromCode(taskTypeCode).get();
-			final TaskID id = new TaskID(jobId, taskId, serialNo, taskType);
+			final TaskID id = new TaskID(jobId, taskId, seqNo, taskType);
 			taskResponse.put(ScheduledConstants.PLATFORM_ID, platformId);
 			LOG.info("Process task response: " + taskResponse);
 			
@@ -838,7 +838,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 				task.setResultCount(resultCount);
 			}
 			taskPersistenceService.updateTaskByID(task);
-			LOG.info("In-db task state changed: jobId=" + id.jobId + ", taskId=" + id.taskId + ", serialNo=" + id.serialNo + 
+			LOG.info("In-db task state changed: jobId=" + id.jobId + ", taskId=" + id.taskId + ", seqNo=" + id.seqNo + 
 					", resultCount=" + resultCount + ", updateTime=" + updateTime + ", taskStatus=" + taskStatus);
 		}
 	}
@@ -858,27 +858,27 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		updateTaskInfo(id.jobId, id.taskId, taskStatus);
 	}
 	
-	void updateTaskInfo(int jobId, int taskId, int serialNo, TaskStatus taskStatus) {
+	void updateTaskInfo(int jobId, int taskId, int seqNo, TaskStatus taskStatus) {
 		Timestamp updateTime = new Timestamp(Time.now());
 		Task task = new Task();
 		task.setId(taskId);
 		task.setStatus(taskStatus.getCode());
 		task.setDoneTime(updateTime);
 		taskPersistenceService.updateTaskByID(task);
-		LOG.info("In-db task state changed: jobId=" + jobId + ", taskId=" + taskId + ", serialNo=" + serialNo + 
+		LOG.info("In-db task state changed: jobId=" + jobId + ", taskId=" + taskId + ", seqNo=" + seqNo + 
 				", updateTime=" + updateTime + ", taskStatus=" + taskStatus);
 	}
 	
-	private void updateTaskStatusWithoutTime(int jobId, int taskId, int serialNo, TaskStatus taskStatus) {
+	private void updateTaskStatusWithoutTime(int jobId, int taskId, int seqNo, TaskStatus taskStatus) {
 		Task task = new Task();
 		task.setId(taskId);
 		task.setStatus(taskStatus.getCode());
 		taskPersistenceService.updateTaskByID(task);
 		LOG.info("In-db task state changed: jobId=" +
-				jobId + ", taskId=" + taskId + ", serialNo=" + serialNo + ", taskStatus=" + taskStatus);
+				jobId + ", taskId=" + taskId + ", seqNo=" + seqNo + ", taskStatus=" + taskStatus);
 	}
 	
-	private void updateStartedTask(int jobId, int taskId, int serialNo, TaskStatus taskStatus) {
+	private void updateStartedTask(int jobId, int taskId, int seqNo, TaskStatus taskStatus) {
 		Timestamp updateTime = new Timestamp(Time.now());
 		Task task = new Task();
 		task.setId(taskId);
@@ -886,7 +886,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		task.setDoneTime(updateTime);
 		task.setStatus(taskStatus.getCode());
 		taskPersistenceService.updateTaskByID(task);
-		LOG.info("In-db task state changed: jobId=" + jobId + ", taskId=" + taskId + ", serialNo=" + serialNo + 
+		LOG.info("In-db task state changed: jobId=" + jobId + ", taskId=" + taskId + ", seq=" + seqNo + 
 				", startTime=" + updateTime + ", updateTime=" + updateTime + ", taskStatus=" + taskStatus);
 	}
 	
@@ -1199,13 +1199,13 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		
 		final int jobId;
 		final int taskId;
-		final int serialNo;
+		final int seqNo;
 		final TaskType taskType;
 		
-		public TaskID(int jobId, int taskId, int serialNo, TaskType taskType) {
+		public TaskID(int jobId, int taskId, int seqNo, TaskType taskType) {
 			super();
 			this.jobId = jobId;
-			this.serialNo = serialNo;
+			this.seqNo = seqNo;
 			this.taskType = taskType;
 			this.taskId = taskId;
 		}
@@ -1225,7 +1225,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 			final JSONObject description = new JSONObject(true);
 			description.put(ScheduledConstants.JOB_ID, jobId);
 			description.put(ScheduledConstants.TASK_ID, taskId);
-			description.put(ScheduledConstants.SERIAL_NO, serialNo);
+			description.put(ScheduledConstants.SEQ_NO, seqNo);
 			description.put(ScheduledConstants.TASK_TYPE, taskType);
 			return description;
 		}
@@ -1246,7 +1246,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		final TaskID id;
 		
 		public TaskInfo(TaskID id) {
-			super(id.jobId, id.taskId, id.serialNo, id.taskType);
+			super(id.jobId, id.taskId, id.seqNo, id.taskType);
 			this.id = id;
 		}
 		

@@ -30,7 +30,7 @@ public class TaskOrder {
 	public String toString() {
 		return " jobId=" + task.getJobId() + 
 				", taskId=" + task.getId() + 
-				", serialNo=" + task.getSerialNo() + 
+				", seqNo=" + task.getSeqNo() + 
 				", taskType=" + TaskType.fromCode(task.getTaskType()) + 
 				", taskCount=" + taskCount;
 	}

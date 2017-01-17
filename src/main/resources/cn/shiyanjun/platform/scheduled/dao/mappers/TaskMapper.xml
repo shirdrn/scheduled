@@ -9,7 +9,7 @@
 		<result property="jobId" column="job_id" />
 		<result property="status" column="status" />
 		<result property="taskType" column="task_type" />
-		<result property="serialNo" column="serial_no" />
+		<result property="seqNo" column="seq_no" />
 		<result property="params" column="params" />
 		<result property="resultCount" column="result_count" />
 		<result property="startTime" column="start_time" />
@@ -19,11 +19,11 @@
 	<insert id="insertTasks" useGeneratedKeys="true" keyProperty="id"
 		parameterType="java.util.List">
 		INSERT INTO
-		task(job_id,serial_no,task_type,params,status,result_count,start_time,done_time)
+		task(job_id,seq_no,task_type,params,status,result_count,start_time,done_time)
 		VALUES
 		<foreach collection="list" item="item" index="index"
 			separator=",">
-			(#{item.jobId},#{item.serialNo},#{item.taskType},#{item.params},#{item.status},#{item.resultCount},
+			(#{item.jobId},#{item.seqNo},#{item.taskType},#{item.params},#{item.status},#{item.resultCount},
 			#{item.startTime},#{item.doneTime})
 		</foreach>
 	</insert>
@@ -37,8 +37,8 @@
 			<if test="status != null">
 				status = #{status},
 			</if>
-			<if test="serialNo != null">
-				serial_no = #{serialNo},
+			<if test="seqNo != null">
+				seq_no = #{seqNo},
 			</if>
 			<if test="taskType != null">
 				task_type = #{taskType},
@@ -63,7 +63,7 @@
 	<select id="retrieveTasks" parameterType="java.util.List"
 		resultMap="taskResultMap">
 		SELECT
-		id,job_id,status,serial_no,task_type,params,result_count,start_time,done_time
+		id,job_id,status,seq_no,task_type,params,result_count,start_time,done_time
 		FROM task where task_type=#{taskType} and status=#{taskStatus} and
 		job_id in
 		(
@@ -80,6 +80,6 @@
 		) x
 		WHERE status NOT LIKE '%7%'
 		)
-		order by serialNo asc
+		order by seqNo asc
 	</select>
 </mapper>

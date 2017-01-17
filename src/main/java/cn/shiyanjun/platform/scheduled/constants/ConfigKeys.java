@@ -5,8 +5,8 @@ public interface ConfigKeys {
 	String SCHEDULED_WEB_MANAGER_PORT = "scheduled.web.manager.port";
 	String SCHEDULED_FETCH_JOB_INTERVAL_MILLIS = "scheduled.fetch.job.interval.millis";
 	String SCHEDULED_QUEUEING_QUEUE_NAMES = "scheduled.queueing.queue.name";
-	String SCHEDULED_STALE_TASK_CHECK_INTERVAL_SECS = "scheduled.stale.task.check.interval.secs";
-	String SCHEDULED_STALE_TASK_MAX_THRESHOLD_SECS = "scheduled.stale.task.max.threshold.secs";
+	String SCHEDULED_STALE_JOB_CHECK_INTERVAL_SECS = "scheduled.stale.job.check.interval.secs";
+	String SCHEDULED_STALE_JOB_MAX_THRESHOLD_SECS = "scheduled.stale.job.max.threshold.secs";
 	String SCHEDULED_MQ_TASK_QUEUE_NAME = "scheduled.mq.task.queue.name";
 	String SCHEDULED_MQ_HEARTBEAT_QUEUE_NAME = "scheduled.mq.heartbeat.queue.name";
 	String SCHEDULED_MQ_RESOURCE_QUEUE_NAME = "scheduled.mq.resource.queue.name";

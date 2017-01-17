@@ -35,15 +35,15 @@ class StaleJobChecker implements Runnable {
 	private final SchedulingManagerImpl sched;
 	private final ConcurrentMap<Integer, JobInfo> timeoutJobIdToInfos = Maps.newConcurrentMap();
 	private final int keptTimeoutJobMaxCount;
-	private final int staleTaskMaxThresholdSecs;
-	private final long staleTaskMaxThresholdMillis;
+	private final int staleJobMaxThresholdSecs;
+	private final long staleJobMaxThresholdMillis;
 	
 	public StaleJobChecker(final SchedulingManagerImpl schedulingManager) {
 		this.sched = schedulingManager;
 		keptTimeoutJobMaxCount = schedulingManager.manager.getContext().getInt(ConfigKeys.SCHEDULED_KEPT_TIMEOUT_JOB_MAX_COUNT, 100);
 		// default 2 hours
-		staleTaskMaxThresholdSecs = schedulingManager.manager.getContext().getInt(ConfigKeys.SCHEDULED_STALE_TASK_MAX_THRESHOLD_SECS, 7200);
-		staleTaskMaxThresholdMillis = staleTaskMaxThresholdSecs * 1000;
+		staleJobMaxThresholdSecs = schedulingManager.manager.getContext().getInt(ConfigKeys.SCHEDULED_STALE_JOB_MAX_THRESHOLD_SECS, 7200);
+		staleJobMaxThresholdMillis = staleJobMaxThresholdSecs * 1000;
 	}
 	
 	@Override
@@ -84,7 +84,7 @@ class StaleJobChecker implements Runnable {
 			int jobId = job.getId();
 			long now = Time.now();
 			// check whether a job is timeout
-			if(now - job.getDoneTime().getTime() > staleTaskMaxThresholdMillis) {
+			if(now - job.getDoneTime().getTime() > staleJobMaxThresholdMillis) {
 				LOG.info("Stale in-db job: jobId=" + jobId);
 				List<Task> tasks = sched.getTasksFor(job.getId());
 				JobInfo jobInfo = sched.runningJobIdToInfos.get(jobId);
@@ -136,7 +136,7 @@ class StaleJobChecker implements Runnable {
 			JobInfo jobInfo = sched.runningJobIdToInfos.get(jobId);
 			
 			// check timeout jobs (RUNNING || CANCELLED)
-			boolean isTimeout = Time.now() - jobInfo.lastUpdatedTime > staleTaskMaxThresholdMillis;
+			boolean isTimeout = Time.now() - jobInfo.lastUpdatedTime > staleJobMaxThresholdMillis;
 			if(jobInfo.jobStatus != JobStatus.SUCCEEDED && jobInfo.jobStatus != JobStatus.FAILED && isTimeout) {
 				LOG.info("Stale in-mem job: jobInfo=" + jobInfo);
 				String queue = jobInfo.queue;
@@ -207,7 +207,7 @@ class StaleJobChecker implements Runnable {
 					// clear timeout job with RUNNING status && in Redis queue
 					long now = Time.now();
 					if((jobStatus == JobStatus.RUNNING || jobStatus == JobStatus.CANCELLING)
-							&& now - lastUpdateTs > staleTaskMaxThresholdMillis) {
+							&& now - lastUpdateTs > staleJobMaxThresholdMillis) {
 						sched.removeRedisJob(queue, jobId);
 						LOG.warn("Stale job in Redis purged: queue=" + queue + ", job=" + job);
 					}

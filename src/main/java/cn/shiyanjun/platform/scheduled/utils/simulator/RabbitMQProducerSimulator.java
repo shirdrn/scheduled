@@ -25,7 +25,7 @@ public class RabbitMQProducerSimulator {
 		String platformId = "5d54f2f494964c35a81e4422678141a0";
 		int taskId = 1;
 		int jobId = 1;
-		int serialNo = 1;
+		int seqNo = 1;
 		TaskStatus status = TaskStatus.SUCCEEDED;
 		int taskType = 1;
 		
@@ -38,7 +38,7 @@ public class RabbitMQProducerSimulator {
 		jo.put(ScheduledConstants.JOB_ID, jobId);
 		jo.put(ScheduledConstants.TASK_ID, taskId);
 		jo.put(ScheduledConstants.TASK_TYPE, taskType);
-		jo.put(ScheduledConstants.SERIAL_NO, serialNo);
+		jo.put(ScheduledConstants.SEQ_NO, seqNo);
 		jo.put(ScheduledConstants.STATUS, status.toString());
 		jo.put("resultCount", "1423");
 		taskArray.add(jo);

@@ -66,7 +66,7 @@ public class MaxConcurrencySchedulingPolicy extends AbstractComponent implements
                     int jobId = jsonObject.getIntValue(ScheduledConstants.JOB_ID);
                     String jobStatus = jsonObject.getString(ScheduledConstants.JOB_STATUS);
                     String taskStatus = jsonObject.getString(ScheduledConstants.TASK_STATUS);
-                    int serialNo = jsonObject.getIntValue(ScheduledConstants.SERIAL_NO);
+                    int seqNo = jsonObject.getIntValue(ScheduledConstants.SEQ_NO);
                     int taskCount = jsonObject.getIntValue(ScheduledConstants.TASK_COUNT);
                     
                     if(jobStatus.equals(JobStatus.QUEUEING.toString())) {
@@ -77,7 +77,7 @@ public class MaxConcurrencySchedulingPolicy extends AbstractComponent implements
                         	if(tasks != null && !tasks.isEmpty()) {
                         		Task utask = null;
                         		for(Task t : tasks) {
-                        			if(t.getSerialNo() == serialNo + 1) {
+                        			if(t.getSeqNo() == seqNo + 1) {
                         				utask = t;
                         				break;
                         			}
@@ -121,15 +121,15 @@ public class MaxConcurrencySchedulingPolicy extends AbstractComponent implements
     	// (job, task) = (SCHEDULED, SCHEDULED) 
     	job.put(ScheduledConstants.JOB_STATUS, JobStatus.SCHEDULED.toString());
     	job.put(ScheduledConstants.TASK_ID, ut.getId());
-    	job.put(ScheduledConstants.SERIAL_NO, ut.getSerialNo());
+    	job.put(ScheduledConstants.SEQ_NO, ut.getSeqNo());
     	job.put(ScheduledConstants.TASK_STATUS, TaskStatus.SCHEDULED.toString());
     	job.put(ScheduledConstants.LAST_UPDATE_TS, Time.now());
-    	updateRedisState(ut.getJobId(), ut.getId(), ut.getSerialNo(), qs, job, oldTaskStatus);
+    	updateRedisState(ut.getJobId(), ut.getId(), ut.getSeqNo(), qs, job, oldTaskStatus);
     	
     	LOG.info("Scheduling task selected: " + job);
 	}
     
-    private void updateRedisState(int jobId, int taskId, int serialNo, final JobQueueingService qs, final JSONObject job, String oldTaskStatus) {
+    private void updateRedisState(int jobId, int taskId, int seqNo, final JobQueueingService qs, final JSONObject job, String oldTaskStatus) {
 		qs.updateQueuedJob(jobId, job);
 		LOG.info("Redis state changed: queue=" + qs.getQueueName() + ", job=" + job);
 	}

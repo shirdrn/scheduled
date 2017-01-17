@@ -152,12 +152,12 @@ public class QueueingManagerImpl extends AbstractComponent implements QueueingMa
 
 		private void createAndCollectTask(int jobId, List<Task> userTasks, JSONObject jTask) {
 			int taskType = jTask.getIntValue(ScheduledConstants.TASK_TYPE);
-			int serialNo = jTask.getIntValue(ScheduledConstants.SERIAL_NO);
+			int seqNo = jTask.getIntValue(ScheduledConstants.SEQ_NO);
 			String parsedExpression = jTask.getString(ScheduledConstants.PARSED_EXPRESSION);
 			Task task = new Task();
 			task.setTaskType(taskType);
 			task.setJobId(jobId);
-			task.setSerialNo(serialNo);
+			task.setSeqNo(seqNo);
 			task.setParams(parsedExpression);
 			task.setStatus(TaskStatus.CREATED.getCode());
 			userTasks.add(task);
@@ -184,7 +184,7 @@ public class QueueingManagerImpl extends AbstractComponent implements QueueingMa
 			detail.put(ScheduledConstants.JOB_STATUS, JobStatus.QUEUEING.toString());
 			detail.put(ScheduledConstants.TASK_COUNT, tasks.size());
 			detail.put(ScheduledConstants.TASK_ID, -1);
-			detail.put(ScheduledConstants.SERIAL_NO, -1);
+			detail.put(ScheduledConstants.SEQ_NO, -1);
 			detail.put(ScheduledConstants.TASK_STATUS, ScheduledConstants.TASK_INITIAL_STATUS);
 			detail.put(ScheduledConstants.LAST_UPDATE_TS, Time.now());
 			

@@ -18,7 +18,7 @@
 			<result property="jobId" column="job_id" />
 			<result property="status" column="task_status" />
 			<result property="taskType" column="task_type" />
-			<result property="serialNo" column="task_serial_no" />
+			<result property="seqNo" column="task_seq_no" />
 			<result property="params" column="task_params" />
 			<result property="resultCount" column="task_result_count" />
 			<result property="startTime" column="task_start_time" />

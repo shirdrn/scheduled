@@ -12,7 +12,7 @@ public class Task implements Serializable {
     private Integer id;
     private Integer jobId;
     private Integer status;
-    private Integer serialNo;
+    private Integer seqNo;
     private Integer taskType;
     private String params;
     private Integer resultCount;
@@ -43,12 +43,12 @@ public class Task implements Serializable {
         this.status = status;
     }
 
-    public Integer getSerialNo() {
-        return serialNo;
+    public Integer getSeqNo() {
+        return seqNo;
     }
 
-    public void setSerialNo(Integer serialNo) {
-        this.serialNo = serialNo;
+    public void setSeqNo(Integer seqNo) {
+        this.seqNo = seqNo;
     }
 
     public Integer getTaskType() {
@@ -99,7 +99,7 @@ public class Task implements Serializable {
                 "id=" + id +
                 ", jobId=" + jobId +
                 ", status=" + status +
-                ", serialNo=" + serialNo +
+                ", seqNo=" + seqNo +
                 ", taskType=" + taskType +
                 ", params='" + params + '\'' +
                 ", resultCount=" + resultCount +
