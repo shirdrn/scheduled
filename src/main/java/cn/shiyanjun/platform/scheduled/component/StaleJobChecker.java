@@ -100,7 +100,7 @@ class StaleJobChecker implements Runnable {
 									TaskInfo ti = sched.runningTaskIdToInfos.get(id);
 									if(ti != null && ti.taskStatus == TaskStatus.RUNNING 
 											&& sched.manager.getPlatformId().equals(ti.platformId)) {
-										sched.releaseResource(queue, ti.taskType);
+										sched.releaseResource(queue, ti.jobId, ti.taskId, ti.taskType);
 										sched.updateTaskInfo(ti.id, TaskStatus.TIMEOUT);
 										sched.incrementTimeoutTaskCount(queue);
 										sched.updateJobStatCounter(queue, JobStatus.TIMEOUT);
@@ -163,7 +163,7 @@ class StaleJobChecker implements Runnable {
 						TaskInfo ti = sched.runningTaskIdToInfos.get(id);
 						if(ti != null && (ti.taskStatus == TaskStatus.RUNNING || targetJobStatus == JobStatus.CANCELLED)
 								&& sched.manager.getPlatformId().equals(ti.platformId)) {
-							sched.releaseResource(queue, ti.taskType);
+							sched.releaseResource(queue, ti.jobId, ti.taskId, ti.taskType);
 							sched.updateTaskInfo(ti.id, TaskStatus.TIMEOUT);
 							sched.incrementTimeoutTaskCount(queue);
 							// clear cancelled job from memory

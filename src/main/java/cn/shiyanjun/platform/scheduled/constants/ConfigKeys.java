@@ -17,6 +17,7 @@ public interface ConfigKeys {
 	String SCHEDULED_RECOVERY_FEATURE_ENABLED = "scheduled.recovery.feature.enabled";
 	String SCHEDULED_MAINTENANCE_TIME_SEGMENT_START = "scheduled.maintenance.time.segment.start";
 	String SCHEDULED_MAINTENANCE_TIME_SEGMENT_END = "scheduled.maintenance.time.segment.end";
+	String SCHEDULED_MAX_RECYCLE_RESOURCE_CACHE_CAPACITY = "scheduled.max.recycle.resource.cache.capacity";
 	
 	String SERVICE_JOB_ORCHESTRATE_PROTOCOL = "service.job.orchestrate.protocol";
 	String SERVICE_JOB_ORCHESTRATE_URL = "service.job.orchestrate.url";

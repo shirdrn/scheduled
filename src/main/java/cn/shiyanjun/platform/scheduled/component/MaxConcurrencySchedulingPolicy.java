@@ -50,7 +50,7 @@ public class MaxConcurrencySchedulingPolicy extends AbstractComponent implements
     public synchronized Optional<TaskOrder> offerTask(String queue, TaskType taskType) {
 		Optional<TaskOrder> got = Optional.empty();
 		// allocate resource
-		int availableResources = resourceMetadataManager.queryResource(queue, taskType);
+		int availableResources = resourceMetadataManager.availableResource(queue, taskType);
 		LOG.debug("Available resources: queue=" + queue + ", taskType=" + taskType + ", resources=" + availableResources);
         if (availableResources > 0) {
             QueueingManagerImpl.QueueingContext queueingContext = manager.getQueueingManager().getQueueingContext(queue);

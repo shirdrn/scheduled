@@ -186,6 +186,8 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 							Optional<TaskOrder> offeredTask = schedulingPolicy.offerTask(queue, taskType);
 							offeredTask.ifPresent(task -> {
 								int jobId = task.getTask().getJobId();
+								int taskId = task.getTask().getId();
+								
 								if(shouldCancelJob(jobId)) {
 									// cancel a running job
 									jobCancelled(jobId, () -> {
@@ -193,7 +195,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 											updateJobInfo(jobId, JobStatus.CANCELLED);
 											removeRedisJob(queue, jobId);
 										} finally {
-											releaseResource(queue, taskType);
+											releaseResource(queue, jobId, taskId, taskType);
 										}
 									});
 								} else {
@@ -304,7 +306,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 			} catch(Exception e) {
 				LOG.error("Fail to schedule task: jobId=" + jobId + ", taskId=" + taskId + ", seqNo=" + seqNo, e);
 				if(!alreadyPublished) {
-					releaseResource(queue, taskType);
+					releaseResource(queue, jobId, taskId, taskType);
 				}
 				
 				// update job status
@@ -407,8 +409,8 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		void processFreshTasksResponse(Heartbeat hb);
 		void recoverTaskInMemoryStructures(JSONObject taskResponse) throws Exception;
 		
-		void releaseResource(final String queue, TaskType taskType);
-		void releaseResource(final String queue, TaskType taskType, boolean isTenuredTaskResponse);
+		void releaseResource(final String queue, int jobId, int taskId, TaskType taskType);
+		void releaseResource(final String queue, int jobId, int taskId, TaskType taskType, boolean isTenuredTaskResponse);
 		
 		void incrementSucceededTaskCount(String queue, JSONObject taskResponse);
 		void incrementFailedTaskCount(String queue, JSONObject taskResponse);
@@ -621,16 +623,16 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		}
 		
 		@Override
-		public void releaseResource(final String queue, TaskType taskType, boolean isTenuredTaskResponse) {
+		public void releaseResource(final String queue, int jobId, int taskId, TaskType taskType, boolean isTenuredTaskResponse) {
 			// if a fresh task response, operate resource counter
 			if(!isTenuredTaskResponse) {
-				releaseResource(queue, taskType);
+				releaseResource(queue, jobId, taskId, taskType);
 			}
 		}
 		
 		@Override
-		public void releaseResource(final String queue, TaskType taskType) {
-			resourceMetadataManager.releaseResource(queue, taskType);
+		public void releaseResource(final String queue, int jobId, int taskId, TaskType taskType) {
+			resourceMetadataManager.releaseResource(queue, jobId, taskId, taskType);
 			resourceMetadataManager.currentResourceStatuses();
 			logTaskCounterChanged(queue);
 		}
@@ -741,7 +743,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 			switch(taskStatus) {
 				case SUCCEEDED:
 					LOG.info("Task succeeded: " + taskResponse);
-					taskResponseHandlingController.releaseResource(queue, id.taskType, isTenuredTasksResponse);
+					taskResponseHandlingController.releaseResource(queue, id.jobId, id.taskId, id.taskType, isTenuredTasksResponse);
 					updateTaskInfo(id, taskStatus, taskResponse);
 					processJobStatus(jobInfo, id, taskStatus);
 					
@@ -750,7 +752,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 					break;
 				case FAILED:
 					LOG.info("Task failed: " + taskResponse);
-					taskResponseHandlingController.releaseResource(queue, id.taskType, isTenuredTasksResponse);
+					taskResponseHandlingController.releaseResource(queue, id.jobId, id.taskId, id.taskType, isTenuredTasksResponse);
 					updateTaskInfo(id, taskStatus, taskResponse);
 					processJobStatus(jobInfo, id, taskStatus);
 					
@@ -1051,8 +1053,8 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		LOG.info("In-memory job state changed: job=" + jobInfo);
 	}
 	
-	void releaseResource(String queue, TaskType taskType) {
-		taskResponseHandlingController.releaseResource(queue, taskType);
+	void releaseResource(String queue, int jobId, int taskId, TaskType taskType) {
+		taskResponseHandlingController.releaseResource(queue, jobId, taskId, taskType);
 	}
 	
 	void incrementTimeoutTaskCount(String queue) {

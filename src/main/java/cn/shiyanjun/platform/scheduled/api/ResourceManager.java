@@ -10,8 +10,8 @@ import cn.shiyanjun.platform.scheduled.component.ResourceManagerImpl.TaskStatCou
 public interface ResourceManager {
 
 	void allocateResource(String queue, TaskType taskType);
-	void releaseResource(String queue, TaskType taskType);
-	int queryResource(String queue, TaskType taskType);
+	void releaseResource(String queue, int jobId, int taskId, TaskType taskType);
+	int availableResource(String queue, TaskType taskType);
 	Set<TaskType> taskTypes(String queue);
 	
 	int getRunningTaskCount(String queue);

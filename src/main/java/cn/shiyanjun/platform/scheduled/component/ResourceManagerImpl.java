@@ -12,11 +12,14 @@ import org.apache.commons.logging.LogFactory;
 
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Preconditions;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 
 import cn.shiyanjun.platform.api.Context;
 import cn.shiyanjun.platform.api.constants.TaskType;
+import cn.shiyanjun.platform.api.utils.Time;
 import cn.shiyanjun.platform.scheduled.api.ResourceManager;
 import cn.shiyanjun.platform.scheduled.common.StatCounter;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
@@ -31,6 +34,10 @@ public class ResourceManagerImpl implements ResourceManager {
 	private final Map<String, JobStatCounter> jobStatCounters = Maps.newHashMap();
 	private final Map<String, TaskStatCounter> taskStatCounters = Maps.newHashMap();
 	private final Map<TaskType, Integer> reportedAvailableResources = Maps.newHashMap();
+	
+	private static final int DEFAULT_MAX_RECYCLE_RESOURCE_CACHE_CAPACITY = 10000;
+	private final int maxRecycleResourceCacheCapacity;
+	private final ResourceRecyclingGuard guard;
 	
 	public ResourceManagerImpl(Context context) {
 		String[] a = context.getStringArray(ConfigKeys.SCHEDULED_TASK_MAX_CONCURRENCIES, null);
@@ -58,6 +65,10 @@ public class ResourceManagerImpl implements ResourceManager {
 		}
 		LOG.info("Configured task types: " + taskTypes);
 		LOG.info("Configured resources: " + maxConcurrencies);
+		
+		maxRecycleResourceCacheCapacity = context.getInt(ConfigKeys.SCHEDULED_MAX_RECYCLE_RESOURCE_CACHE_CAPACITY, DEFAULT_MAX_RECYCLE_RESOURCE_CACHE_CAPACITY);
+		LOG.info("Configs: maxRecycleResourceCacheCapacity=" + maxRecycleResourceCacheCapacity);
+		guard = new ResourceRecyclingGuard();
 	}
 	
 	@Override
@@ -70,16 +81,88 @@ public class ResourceManagerImpl implements ResourceManager {
 	}
 
 	@Override
-	public synchronized void releaseResource(String queue, TaskType taskType) {
-		final AtomicInteger occupied = counters.get(queue).get(taskType);
-		occupied.decrementAndGet();
+	public void releaseResource(String queue, int jobId, int taskId, TaskType taskType) {
+		guard.recycle(queue, new ID(jobId, taskId), taskType, () -> {
+			final AtomicInteger occupied = counters.get(queue).get(taskType);
+			occupied.decrementAndGet();
+		});
+	}
+	
+	final class ResourceRecyclingGuard {
+		
+		private final Cache<ID, ResourceState> stateCache;
+		
+		public ResourceRecyclingGuard() {
+			super();
+			stateCache = CacheBuilder.newBuilder().maximumSize(maxRecycleResourceCacheCapacity).build();
+		}
+		
+		public synchronized boolean recycle(String queue, ID id, TaskType taskType, Runnable action) {
+			final ResourceState value = stateCache.getIfPresent(id);
+			if(value == null) {
+				stateCache.put(id, new ResourceState(id, taskType));
+				action.run();
+				LOG.info("Cached recycled state: jobId=" + id.jobId + ", taskId=" + id.taskId + ", taskType=" + taskType);
+				return true;
+			} else {
+				LOG.warn("Already recycled resource: state=" + value);
+				return false;
+			}
+		}
+	}
+	
+	final class ID {
+		
+		private final int jobId;
+		private final int taskId;
+		
+		public ID(int jobId, int taskId) {
+			super();
+			this.jobId = jobId;
+			this.taskId = taskId;
+		}
+		
+		@Override
+		public boolean equals(Object obj) {
+			ID other = (ID) obj;
+			return jobId == other.jobId && taskId == other.taskId;
+		}
+		
+		@Override
+		public int hashCode() {
+			return 31 * jobId + 31 * taskId;
+		}
+	}
+	
+	final class ResourceState {
+		
+		final ID id;
+		final TaskType taskType;
+		final long timestamp;
+		
+		public ResourceState(ID id, TaskType taskType) {
+			super();
+			this.id = id;
+			this.taskType = taskType;
+			this.timestamp = Time.now();
+		}
+		
+		@Override
+		public String toString() {
+			JSONObject info = new JSONObject(true);
+			info.put("jobId", id.jobId);
+			info.put("taskId", id.taskId);
+			info.put("taskType", taskType);
+			info.put("timestamp", timestamp);
+			return info.toJSONString();
+		}
 	}
 	
 	@Override
-	public int queryResource(String queue, TaskType taskType) {
+	public int availableResource(String queue, TaskType taskType) {
 		int occupied = counters.get(queue).get(taskType).get();
-		int available = maxConcurrencies.get(queue).get(taskType);
-		return available - occupied;
+		int maxAvailableCount = maxConcurrencies.get(queue).get(taskType);
+		return maxAvailableCount - occupied;
 	}
 	
 	@Override
