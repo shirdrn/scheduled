@@ -11,7 +11,6 @@ public interface ConfigKeys {
 	String SCHEDULED_MQ_HEARTBEAT_QUEUE_NAME = "scheduled.mq.heartbeat.queue.name";
 	String SCHEDULED_MQ_RESOURCE_QUEUE_NAME = "scheduled.mq.resource.queue.name";
 	String SCHEDULED_QUEUEING_REDIS_DB_INDEX = "scheduled.queueing.redis.db.index";
-	String SCHEDULED_TASK_MAX_CONCURRENCIES = "scheduled.task.max.concurrencies";
 	String SCHEDULED_KEPT_HISTORY_JOB_MAX_COUNT = "scheduled.kept.history.job.max.count";
 	String SCHEDULED_KEPT_TIMEOUT_JOB_MAX_COUNT = "scheduled.kept.timeout.job.max.count";
 	String SCHEDULED_RECOVERY_FEATURE_ENABLED = "scheduled.recovery.feature.enabled";

@@ -1,19 +1,24 @@
 package cn.shiyanjun.platform.scheduled;
 
 import java.util.Iterator;
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.ibatis.session.SqlSessionFactory;
 
+import com.google.common.base.Strings;
 import com.rabbitmq.client.ConnectionFactory;
 
 import cn.shiyanjun.platform.api.Context;
 import cn.shiyanjun.platform.api.LifecycleAware;
 import cn.shiyanjun.platform.api.common.AbstractComponent;
 import cn.shiyanjun.platform.api.common.ContextImpl;
+import cn.shiyanjun.platform.api.constants.TaskType;
 import cn.shiyanjun.platform.api.utils.ComponentUtils;
+import cn.shiyanjun.platform.api.utils.Pair;
 import cn.shiyanjun.platform.scheduled.api.ComponentManager;
 import cn.shiyanjun.platform.scheduled.api.JobController;
 import cn.shiyanjun.platform.scheduled.api.JobFetcher;
@@ -65,7 +70,7 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	private MQAccessService taskMQAccessService;
 	private MQAccessService heartbeatMQAccessService;
 	private SchedulingPolicy schedulingPolicy;
-	private ResourceManager resourceMetadataManager;
+	private ResourceManager resourceManager;
 	private RestExporter restManageable;
 	private RestServer restServer;
 	
@@ -97,7 +102,7 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 			taskMQAccessService = new RabbitMQAccessService(taskQName, connectionFactory);
 			heartbeatMQAccessService = new RabbitMQAccessService(hbQName, connectionFactory);
 			
-			resourceMetadataManager = new ResourceManagerImpl(context);
+			resourceManager = new ResourceManagerImpl(context);
 			queueingManager = new QueueingManagerImpl(this);
 			jobFetcher = new ScheduledJobFetcher(this);
 			schedulingPolicy = new MaxConcurrencySchedulingPolicy(this);
@@ -107,7 +112,7 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 			configureRestServer();
 
 			// map job types to Redis queue names
-			parseRedisQueueJobRelations();
+			parseRedisQueueRelatedConfigs();
 					
 			taskMQAccessService.start();
 			recoveryManager.start();
@@ -117,6 +122,7 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 			queueingManager.start();
 			restServer.start();
 		} catch (Exception e) {
+			LOG.error(e);
 			stop();
 		}
 	}
@@ -130,17 +136,25 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 		restServer.register("/admin/cancelJob", CancelJobServlet.class);
 	}
 	
-	private void parseRedisQueueJobRelations() {
+	protected void parseRedisQueueRelatedConfigs() {
 		Context ctx = new ContextImpl(queueingConfig);
 		Iterator<Object> iter = ctx.keyIterator();
 		while(iter.hasNext()) {
-			String queueName = iter.next().toString();
-			String[] values = ctx.get(queueName).split("\\s*,\\s*");
-			int[] types = new int[values.length];
-			for(int i=0; i<values.length; i++) {
-				types[i] = Integer.parseInt(values[i]);
+			String queue = iter.next().toString();
+			String value = ctx.get(queue);
+			
+			// job:1,2,3|1:1,2:1
+			if(!Strings.isNullOrEmpty(value)) {
+				String[] values = value.split("\\|");
+				String jobConfig = values[0].split(":")[1];
+				String taskConfig = values[1];
+				int[] jobTypes = ConfigUtils.stringsToInts(jobConfig.split(","));
+				queueingManager.registerQueue(queue, jobTypes);
+				List<Pair<TaskType, Integer>> taskTypes = ConfigUtils.parsePairStrings(taskConfig).stream()
+						.map(p -> new Pair<TaskType, Integer>(TaskType.fromCode(p.getKey()).get(), p.getValue()))
+						.collect(Collectors.toList());
+				resourceManager.registerResource(queue, taskTypes);
 			}
-			queueingManager.registerQueue(queueName, types);
 		}
 	}
 	
@@ -156,7 +170,7 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 
 	@Override
 	public ResourceManager getResourceManager() {
-		return resourceMetadataManager;
+		return resourceManager;
 	}
 
 	@Override

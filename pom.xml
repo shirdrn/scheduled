@@ -10,7 +10,7 @@
 	<properties>
 		<jetty.version>9.3.14.v20161028</jetty.version>
 	</properties>
-	
+
 	<dependencies>
 		<dependency>
 			<groupId>cn.shiyanjun</groupId>
@@ -87,6 +87,12 @@
 			<groupId>org.eclipse.jetty</groupId>
 			<artifactId>jetty-util</artifactId>
 			<version>${jetty.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>junit</groupId>
+			<artifactId>junit</artifactId>
+			<version>4.12</version>
+			<scope>test</scope>
 		</dependency>
 	</dependencies>
 

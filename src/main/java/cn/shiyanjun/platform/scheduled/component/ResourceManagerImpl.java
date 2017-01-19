@@ -1,8 +1,8 @@
 package cn.shiyanjun.platform.scheduled.component;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -19,6 +19,7 @@ import com.google.common.collect.Sets;
 
 import cn.shiyanjun.platform.api.Context;
 import cn.shiyanjun.platform.api.constants.TaskType;
+import cn.shiyanjun.platform.api.utils.Pair;
 import cn.shiyanjun.platform.api.utils.Time;
 import cn.shiyanjun.platform.scheduled.api.ResourceManager;
 import cn.shiyanjun.platform.scheduled.common.StatCounter;
@@ -40,35 +41,26 @@ public class ResourceManagerImpl implements ResourceManager {
 	private final ResourceRecyclingGuard guard;
 	
 	public ResourceManagerImpl(Context context) {
-		String[] a = context.getStringArray(ConfigKeys.SCHEDULED_TASK_MAX_CONCURRENCIES, null);
-		Preconditions.checkArgument(a != null, "Max concurrencies MUST be configured");
-		for(String s : a) {
-			String[] aa = s.split("\\(");
-			String queue = aa[0];
-			maxConcurrencies.put(queue, Maps.newHashMap());
-			counters.put(queue, Maps.newHashMap());
-			taskTypes.put(queue, Sets.newHashSet());
-			jobStatCounters.put(queue, new JobStatCounter(queue));
-			taskStatCounters.put(queue, new TaskStatCounter(queue));
-			String[] rs = aa[1].substring(0, aa[1].length()-1).split(";");
-			for(String t : rs) {
-				String[] ts = t.split("\\:");
-				int type = Integer.parseInt(ts[0]);
-				int count = Integer.parseInt(ts[1]);
-				Optional<TaskType> taskType = TaskType.fromCode(type);
-				taskType.ifPresent(tt -> {
-					taskTypes.get(queue).add(tt);
-					maxConcurrencies.get(queue).put(tt, count);
-					counters.get(queue).put(tt, new AtomicInteger(0));
-				});
-			}
-		}
-		LOG.info("Configured task types: " + taskTypes);
-		LOG.info("Configured resources: " + maxConcurrencies);
-		
 		maxRecycleResourceCacheCapacity = context.getInt(ConfigKeys.SCHEDULED_MAX_RECYCLE_RESOURCE_CACHE_CAPACITY, DEFAULT_MAX_RECYCLE_RESOURCE_CACHE_CAPACITY);
 		LOG.info("Configs: maxRecycleResourceCacheCapacity=" + maxRecycleResourceCacheCapacity);
 		guard = new ResourceRecyclingGuard();
+	}
+	
+	@Override
+	public void registerResource(String queue, List<Pair<TaskType, Integer>> amounts) {
+		Preconditions.checkArgument(!maxConcurrencies.containsKey(queue), "Already registered: queue=" + queue);
+		maxConcurrencies.put(queue, Maps.newHashMap());
+		counters.put(queue, Maps.newHashMap());
+		taskTypes.put(queue, Sets.newHashSet());
+		jobStatCounters.put(queue, new JobStatCounter(queue));
+		taskStatCounters.put(queue, new TaskStatCounter(queue));
+		amounts.stream().forEach(p -> {
+			taskTypes.get(queue).add(p.getKey());
+			maxConcurrencies.get(queue).put(p.getKey(), p.getValue());
+			counters.get(queue).put(p.getKey(), new AtomicInteger(0));
+		});
+		LOG.info("Configured task types: " + taskTypes);
+		LOG.info("Configured resources: " + maxConcurrencies);
 	}
 	
 	@Override
