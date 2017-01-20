@@ -59,7 +59,7 @@ public class MaxConcurrencySchedulingPolicy extends AbstractComponent implements
             if(CollectionUtils.isNotEmpty(jobs)) {
                 
                 // (job, task) with statuses 
-            	// (QUEUEING, WAIT_TO_BE_SCHEDULED) or (QUEUEING, SUCCEED)
+            	// (QUEUEING, CREATED) or (QUEUEING, SUCCEED)
                 // in Redis queue should be scheduled
                 for(String job : jobs) {
                     JSONObject jsonObject = JSONObject.parseObject(job);
@@ -89,8 +89,8 @@ public class MaxConcurrencySchedulingPolicy extends AbstractComponent implements
                         			got = Optional.of(taskOrder);
                         		}
                         	}
-                    	} else if(taskStatus.equals(ScheduledConstants.TASK_INITIAL_STATUS.toString())) {
-                    		// (job, task) = (QUEUEING, WAIT_TO_BE_SCHEDULED)
+                    	} else if(taskStatus.equals(TaskStatus.CREATED.toString())) {
+                    		// (job, task) = (QUEUEING, CREATED)
                     		List<Task> tasksBelongingJob = taskPersistenceService.getTasksFor(jobId);
                         	if(tasksBelongingJob != null && !tasksBelongingJob.isEmpty()) {
                         		Task ut = tasksBelongingJob.get(0);

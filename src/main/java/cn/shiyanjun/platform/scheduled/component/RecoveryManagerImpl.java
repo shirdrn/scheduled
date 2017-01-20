@@ -114,7 +114,7 @@ public class RecoveryManagerImpl implements RecoveryManager {
 				if(jobStatus == JobStatus.SCHEDULED) {
 					job.put(ScheduledConstants.JOB_STATUS, JobStatus.QUEUEING.toString());
 					job.put(ScheduledConstants.LAST_UPDATE_TS, Time.now());
-					job.put(ScheduledConstants.TASK_STATUS, ScheduledConstants.TASK_INITIAL_STATUS);
+					job.put(ScheduledConstants.TASK_STATUS, TaskStatus.CREATED.toString());
 					qs.updateQueuedJob(jobId, job);
 					LOG.info("Job in Redis recovered: " + job);
 				} else if(jobStatus == JobStatus.RUNNING 

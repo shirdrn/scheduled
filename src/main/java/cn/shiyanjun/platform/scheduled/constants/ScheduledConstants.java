@@ -30,8 +30,6 @@ public interface ScheduledConstants {
 	String EXP_CODE = "expCode";
 	String TASK_TYPE = "taskType";
 	
-	String TASK_INITIAL_STATUS = "WAIT_TO_BE_SCHEDULED";
-
 	String ROLE = "role";
 	
 	// Constants

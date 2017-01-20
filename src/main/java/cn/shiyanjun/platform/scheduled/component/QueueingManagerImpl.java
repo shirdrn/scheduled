@@ -11,6 +11,7 @@ import org.apache.commons.logging.LogFactory;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Queues;
@@ -185,10 +186,18 @@ public class QueueingManagerImpl extends AbstractComponent implements QueueingMa
 			detail.put(ScheduledConstants.TASK_COUNT, tasks.size());
 			detail.put(ScheduledConstants.TASK_ID, -1);
 			detail.put(ScheduledConstants.SEQ_NO, -1);
-			detail.put(ScheduledConstants.TASK_STATUS, ScheduledConstants.TASK_INITIAL_STATUS);
+			detail.put(ScheduledConstants.TASK_STATUS, TaskStatus.CREATED.toString());
 			detail.put(ScheduledConstants.LAST_UPDATE_TS, Time.now());
 			
-			getJobQueueingService(jobType).enqueue(jobId, detail.toJSONString());
+			final JobQueueingService qs = getJobQueueingService(jobType);
+			// check to ensure the correction of data,
+			// just not permit to get  the duplicated job ID in Redis storage
+			qs.getJobs().forEach(data -> {
+				JSONObject o = JSONObject.parseObject(data);
+				int jobIdInRedis = o.getIntValue(ScheduledConstants.JOB_ID);
+				Preconditions.checkArgument(jobIdInRedis != jobId, "Inconsistent data occured in Redis storage!");
+			});
+			qs.enqueue(jobId, detail.toJSONString());
 			
 			LOG.info("Job queued: " + detail);
 			updateJobAndTasks(jobId, tasks);

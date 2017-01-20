@@ -84,7 +84,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 	protected final ConcurrentMap<TaskID, TaskInfo> runningTaskIdToInfos = Maps.newConcurrentMap();
 	private final ConcurrentMap<Integer, JobInfo> completedJobIdToInfos = Maps.newConcurrentMap();
 	private final SchedulingPolicy schedulingPolicy;
-	private final ResourceManager resourceMetadataManager;
+	private final ResourceManager resourceManager;
 	private final FreshTasksResponseProcessingManager freshTasksResponseProcessingManager;
 	private final BlockingQueue<Heartbeat> rawHeartbeatMessages = Queues.newLinkedBlockingQueue();
 	private final StaleJobChecker staleJobChecker;
@@ -103,7 +103,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		heartbeatMQAccessService = this.manager.getHeartbeatMQAccessService();
  		schedulingPolicy = this.manager.getSchedulingPolicy();
 		jobPersistenceService = manager.getJobPersistenceService();
-		resourceMetadataManager = manager.getResourceManager();
+		resourceManager = manager.getResourceManager();
 		freshTasksResponseProcessingManager = new FreshTasksResponseProcessingManager();
 		staleJobChecker = new StaleJobChecker(this);
 		taskResponseHandlingController = new SimpleTaskResponseHandlingController(context);
@@ -181,7 +181,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 				try {
 					// for each job in Redis queue
 					queueingManager.queueNames().forEach(queue -> {
-						resourceMetadataManager.taskTypes(queue).forEach(taskType -> {
+						resourceManager.taskTypes(queue).forEach(taskType -> {
 							LOG.debug("Loop for: queue=" + queue + ", taskType=" + taskType);
 							Optional<TaskOrder> offeredTask = schedulingPolicy.offerTask(queue, taskType);
 							offeredTask.ifPresent(task -> {
@@ -429,14 +429,14 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		@Override
 		public void incrementSucceededTaskCount(String queue, JSONObject taskResponse) {
 			if(!isTenuredTasksResponse(taskResponse)) {
-				resourceMetadataManager.getTaskStatCounter(queue).incrementSucceededTaskCount();
+				resourceManager.getTaskStatCounter(queue).incrementSucceededTaskCount();
 			}
 		}
 		
 		@Override
 		public void incrementFailedTaskCount(String queue, JSONObject taskResponse) {
 			if(!isTenuredTasksResponse(taskResponse)) {
-				resourceMetadataManager.getTaskStatCounter(queue).incrementFailedTaskCount();
+				resourceManager.getTaskStatCounter(queue).incrementFailedTaskCount();
 			}
 		}
 		
@@ -632,8 +632,8 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		
 		@Override
 		public void releaseResource(final String queue, int jobId, int taskId, TaskType taskType) {
-			resourceMetadataManager.releaseResource(queue, jobId, taskId, taskType);
-			resourceMetadataManager.currentResourceStatuses();
+			resourceManager.releaseResource(queue, jobId, taskId, taskType);
+			resourceManager.currentResourceStatuses();
 			logTaskCounterChanged(queue);
 		}
 
@@ -773,8 +773,8 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 	}
 	
 	private void logTaskCounterChanged(final String queue) {
-		JSONObject stat = resourceMetadataManager.getTaskStatCounter(queue).toJSONObject();
-		stat.put("runningTaskCount", resourceMetadataManager.getRunningTaskCount(queue));
+		JSONObject stat = resourceManager.getTaskStatCounter(queue).toJSONObject();
+		stat.put("runningTaskCount", resourceManager.getRunningTaskCount(queue));
 		LOG.info("Task counter changed: queue=" + queue + ", counter=" + stat.toJSONString());
 	}
 	
@@ -926,13 +926,9 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		
 		// the last task was returned back
 		if(taskCount == tasks.size()) {
-			boolean isSuccess = false;
-			if(status == TaskStatus.SUCCEEDED) {
-				isSuccess = true;
-			}
-			jobStatus = isSuccess ? JobStatus.SUCCEEDED : jobStatus;
+			jobStatus = (status == TaskStatus.SUCCEEDED ? JobStatus.SUCCEEDED : 
+				(jobStatus == JobStatus.CANCELLED ? jobStatus : JobStatus.FAILED));
 			removeRedisJob(queue, jobId);
-			
 			updateJobInfo(jobId, jobStatus);
 			
 			jobInfo.lastUpdatedTime = Time.now();
@@ -978,11 +974,12 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		// handle in-memory completed task
 		handleInMemoryCompletedTask(id);
 		
+		// update job statistics counter
 		updateJobStatCounter(queue, jobStatus);
 	}
 	
 	void updateJobStatCounter(String queue, JobStatus jobStatus) {
-		final JobStatCounter jobStatCounter = resourceMetadataManager.getJobStatCounter(queue);
+		final JobStatCounter jobStatCounter = resourceManager.getJobStatCounter(queue);
 		switch(jobStatus) {
 			case SUCCEEDED:
 				jobStatCounter.incrementSucceededJobCount();
@@ -1058,7 +1055,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 	}
 	
 	void incrementTimeoutTaskCount(String queue) {
-		resourceMetadataManager.getTaskStatCounter(queue).incrementTimeoutTaskCount();
+		resourceManager.getTaskStatCounter(queue).incrementTimeoutTaskCount();
 	}
 	
 	List<Job> getJobByState(JobStatus jobStatus) {
