@@ -11,6 +11,7 @@ import org.apache.commons.logging.LogFactory;
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Preconditions;
 
+import cn.shiyanjun.platform.api.common.AbstractComponent;
 import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.utils.NamedThreadFactory;
 import cn.shiyanjun.platform.api.utils.Pair;
@@ -19,7 +20,6 @@ import cn.shiyanjun.platform.scheduled.api.ComponentManager;
 import cn.shiyanjun.platform.scheduled.api.JobFetcher;
 import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
 import cn.shiyanjun.platform.scheduled.api.Protocol;
-import cn.shiyanjun.platform.scheduled.common.AbstractJobController;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 import cn.shiyanjun.platform.scheduled.dao.entities.Job;
 import cn.shiyanjun.platform.scheduled.protocols.JobFetchProtocolManager;
@@ -32,7 +32,7 @@ import cn.shiyanjun.platform.scheduled.protocols.JobOrchestrationProtocolManager
  * 
  * @author yanjun
  */
-public class ScheduledJobFetcher extends AbstractJobController implements JobFetcher {
+public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher {
 
 	private static final Log LOG = LogFactory.getLog(ScheduledJobFetcher.class);
 	private static final int INITIAL_DELAY_TIME = 5000;
@@ -44,7 +44,6 @@ public class ScheduledJobFetcher extends AbstractJobController implements JobFet
 	private final JobOrchestrationProtocolManager jobOrchestrationProtocolManager;
 	private final Enum<?> jobOrchestrationProtocol;
 	private final Enum<?> jobFetchProtocol;
-	private volatile boolean isSchedulingOpened = true;
 	private volatile String maintenanceSegmentStartTime;
 	private volatile String maintenanceSegmentEndTime;
 	
@@ -89,16 +88,6 @@ public class ScheduledJobFetcher extends AbstractJobController implements JobFet
 	}
 	
 	@Override
-	public boolean isSchedulingOpened() {
-		return isSchedulingOpened;
-	}
-
-	@Override
-	public void setSchedulingOpened(boolean isSchedulingOpened) {
-		this.isSchedulingOpened = isSchedulingOpened;
-	}
-	
-	@Override
 	public Pair<String, String> getMaintenanceTimeSegment() {
 		return new Pair<>(maintenanceSegmentStartTime, maintenanceSegmentEndTime);
 	}
@@ -134,7 +123,7 @@ public class ScheduledJobFetcher extends AbstractJobController implements JobFet
 		}
 		
 		private boolean shouldTryToFetch() {
-			if(isSchedulingOpened) {
+			if(manager.isSchedulingOpened()) {
 				String start = maintenanceSegmentStartTime.replaceAll(":", "");
 				String end = maintenanceSegmentEndTime.replaceAll(":", "");
 				String current = Time.formatCurrentHourTime().replaceAll(":", "");
@@ -159,8 +148,8 @@ public class ScheduledJobFetcher extends AbstractJobController implements JobFet
 				Integer jobId = null;
 				try{
 					jobId = job.getId();
-					if(shouldCancelJob(jobId)) {
-						jobCancelled(jobId, () -> {
+					if(manager.shouldCancelJob(jobId)) {
+						manager.jobCancelled(jobId, () -> {
 							job.setStatus(JobStatus.CANCELLED.getCode()); 
 							jobPersistenceService.updateJobByID(job);
 						});

@@ -9,16 +9,17 @@ import com.google.common.collect.Sets;
 
 import cn.shiyanjun.platform.api.Context;
 import cn.shiyanjun.platform.api.common.AbstractComponent;
-import cn.shiyanjun.platform.scheduled.api.JobController;
+import cn.shiyanjun.platform.scheduled.api.ScheduledController;
 
-public abstract class AbstractJobController extends AbstractComponent implements JobController {
+public abstract class AbstractScheduledController extends AbstractComponent implements ScheduledController {
 
-	public AbstractJobController(Context context) {
+	private static final Log LOG = LogFactory.getLog(AbstractScheduledController.class);
+	private static final Set<Integer> cancellingJobs = Sets.newConcurrentHashSet();
+	protected volatile boolean isSchedulingOpened;
+	
+	public AbstractScheduledController(Context context) {
 		super(context);
 	}
-
-	private static final Log LOG = LogFactory.getLog(AbstractJobController.class);
-	private static final Set<Integer> cancellingJobs = Sets.newConcurrentHashSet();
 	
 	@Override
 	public boolean cancelJob(int jobId) {
@@ -37,5 +38,15 @@ public abstract class AbstractJobController extends AbstractComponent implements
 		cancellingJobs.remove(jobId);
 		LOG.info("Job cancelled: jobId=" + jobId);
 	}
+	
+	
+	@Override
+	public boolean isSchedulingOpened() {
+		return isSchedulingOpened;
+	}
 
+	@Override
+	public void setSchedulingOpened(boolean isSchedulingOpened) {
+		this.isSchedulingOpened = isSchedulingOpened;
+	}
 }

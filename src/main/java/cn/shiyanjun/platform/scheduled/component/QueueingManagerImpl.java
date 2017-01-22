@@ -119,31 +119,36 @@ public class QueueingManagerImpl extends AbstractComponent implements QueueingMa
 			while(running) {
 				JSONObject job = null;
 				try {
-					job = queueingQueue.take();
-					if(job != null) {
-						int jobId = job.getIntValue(ScheduledConstants.JOB_ID);
-						int jobType = job.getIntValue(ScheduledConstants.JOB_TYPE);
-						
-						List<JSONObject> jsonTasks = extractTasks(job);
-						
-						List<Task> userTasks = Lists.newArrayList();
-						jsonTasks.forEach(jTask -> createAndCollectTask(jobId, userTasks, jTask));
-						
-						try {
-							// insert task informations into database, with initial status: CREATED
-							taskPersistenceService.insertTasks(userTasks);
+					// control to take a job from the queue
+					if(manager.isSchedulingOpened()) {
+						job = queueingQueue.take();
+						if(job != null) {
+							int jobId = job.getIntValue(ScheduledConstants.JOB_ID);
+							int jobType = job.getIntValue(ScheduledConstants.JOB_TYPE);
 							
-							// add tasks of a job to waiting queue
-							doQueueing(jobId, jobType, userTasks);
-						} catch (Exception e) {
-							LOG.warn("Failed to save or queueing job: " + job, e);
-							// update job status to FAILED
-							Job myJob = new Job();
-							myJob.setId(jobId);
-							myJob.setStatus(JobStatus.FAILED.getCode());
-							myJob.setDoneTime(new Timestamp(Time.now()));
-							jobPersistenceService.updateJobByID(myJob);
+							List<JSONObject> jsonTasks = extractTasks(job);
+							
+							List<Task> userTasks = Lists.newArrayList();
+							jsonTasks.forEach(jTask -> createAndCollectTask(jobId, userTasks, jTask));
+							
+							try {
+								// insert task informations into database, with initial status: CREATED
+								taskPersistenceService.insertTasks(userTasks);
+								
+								// add tasks of a job to waiting queue
+								doQueueing(jobId, jobType, userTasks);
+							} catch (Exception e) {
+								LOG.warn("Failed to save or queueing job: " + job, e);
+								// update job status to FAILED
+								Job myJob = new Job();
+								myJob.setId(jobId);
+								myJob.setStatus(JobStatus.FAILED.getCode());
+								myJob.setDoneTime(new Timestamp(Time.now()));
+								jobPersistenceService.updateJobByID(myJob);
+							}
 						}
+					} else {
+						Thread.sleep(3000);
 					}
 				} catch (Exception e) {
 					LOG.error("Failed to queueing: job=" + job, e);

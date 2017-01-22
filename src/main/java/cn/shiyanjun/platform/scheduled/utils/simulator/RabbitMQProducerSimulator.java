@@ -22,7 +22,7 @@ public class RabbitMQProducerSimulator {
 		final MQAccessService taskMQAccessService = new RabbitMQAccessService(taskQName, connectionFactory);
 		taskMQAccessService.start();
 		
-		String platformId = "ae2c26a57d20469ba079e8f4857cde00";
+		String platformId = "094d5d0f0a1348b1b4e9316ba0a9027f";
 		int jobId = 1;
 		int[] taskIds 		= new int[] {1, 2, 3, 4, 5, 6, 7};
 		int[] seqNos 		= new int[] {1, 2, 3, 4, 5, 6, 7};

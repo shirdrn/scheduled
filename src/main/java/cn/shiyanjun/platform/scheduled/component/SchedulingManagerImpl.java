@@ -31,6 +31,7 @@ import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Envelope;
 
 import cn.shiyanjun.platform.api.Context;
+import cn.shiyanjun.platform.api.common.AbstractComponent;
 import cn.shiyanjun.platform.api.constants.JSONKeys;
 import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.constants.TaskStatus;
@@ -46,7 +47,6 @@ import cn.shiyanjun.platform.scheduled.api.ResourceManager;
 import cn.shiyanjun.platform.scheduled.api.SchedulingManager;
 import cn.shiyanjun.platform.scheduled.api.SchedulingPolicy;
 import cn.shiyanjun.platform.scheduled.api.TaskPersistenceService;
-import cn.shiyanjun.platform.scheduled.common.AbstractJobController;
 import cn.shiyanjun.platform.scheduled.common.AbstractRunnableConsumer;
 import cn.shiyanjun.platform.scheduled.common.TaskOrder;
 import cn.shiyanjun.platform.scheduled.component.QueueingManagerImpl.QueueingContext;
@@ -67,7 +67,7 @@ import cn.shiyanjun.platform.scheduled.dao.entities.Task;
  * </ol>
  * @author yanjun
  */
-public class SchedulingManagerImpl extends AbstractJobController implements SchedulingManager {
+public class SchedulingManagerImpl extends AbstractComponent implements SchedulingManager {
 
 	private static final Log LOG = LogFactory.getLog(SchedulingManagerImpl.class);
 	protected final ComponentManager manager;
@@ -141,31 +141,6 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		running = false;
 	}
 	
-	@Override
-	public boolean cancelJob(int jobId) {
-		super.cancelJob(jobId);
-		try {
-			JobInfo ji = runningJobIdToInfos.get(jobId);
-			if(ji != null) {
-				ji.jobStatus = JobStatus.CANCELLING;
-				ji.lastUpdatedTime = Time.now();
-				logInMemoryJobStateChanged(ji);
-				
-				// update Redis job status to CANCELLING
-				String queue = ji.queue;
-				JSONObject job = getRedisJob(queue, jobId);
-				job.put(ScheduledConstants.JOB_STATUS, JobStatus.CANCELLING.toString());
-				job.put(ScheduledConstants.LAST_UPDATE_TS, Time.now());
-				updateRedisState(jobId, queue, job);
-			}
-			// update DB
-			updateJobInfo(jobId, JobStatus.CANCELLING);
-		} catch (Exception e) {
-			return false;
-		}
-		return true;
-	}
-	
 	/**
 	 * Schedules a prepared task, and publish it to the MQ
 	 * 
@@ -188,9 +163,9 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 								int jobId = task.getTask().getJobId();
 								int taskId = task.getTask().getId();
 								
-								if(shouldCancelJob(jobId)) {
+								if(manager.shouldCancelJob(jobId)) {
 									// cancel a running job
-									jobCancelled(jobId, () -> {
+									manager.jobCancelled(jobId, () -> {
 										try {
 											updateJobInfo(jobId, JobStatus.CANCELLED);
 											removeRedisJob(queue, jobId);
@@ -919,7 +894,7 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		
 		TaskStatus status = taskStatus;
 		JobStatus jobStatus = jobInfo.jobStatus;
-		if(shouldCancelJob(jobId)) {
+		if(manager.shouldCancelJob(jobId)) {
 			status = TaskStatus.CANCELLED;
 			jobStatus = JobStatus.CANCELLED;
 		}
@@ -965,8 +940,8 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 			}
 		}
 		
-		if(shouldCancelJob(jobId)) {
-			jobCancelled(jobId, () -> {
+		if(manager.shouldCancelJob(jobId)) {
+			manager.jobCancelled(jobId, () -> {
 				// do nothing
 			}); 
 		}
@@ -1130,6 +1105,31 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		return true;
 	}
 	
+	@Override
+	public boolean cancelJobInternal(int jobId) {
+		return manager.cancelJob(jobId, () -> {
+			try {
+				JobInfo ji = runningJobIdToInfos.get(jobId);
+				if(ji != null) {
+					ji.jobStatus = JobStatus.CANCELLING;
+					ji.lastUpdatedTime = Time.now();
+					logInMemoryJobStateChanged(ji);
+					
+					// update Redis job status to CANCELLING
+					String queue = ji.queue;
+					JSONObject job = getRedisJob(queue, jobId);
+					job.put(ScheduledConstants.JOB_STATUS, JobStatus.CANCELLING.toString());
+					job.put(ScheduledConstants.LAST_UPDATE_TS, Time.now());
+					updateRedisState(jobId, queue, job);
+				}
+				// update DB
+				updateJobInfo(jobId, JobStatus.CANCELLING);
+			} catch (Exception e) {
+				LOG.warn("Fail to cancel job: ", e);
+			}
+		});
+	}
+	
 	private class Heartbeat {
 		
 		Channel channel;
@@ -1262,6 +1262,11 @@ public class SchedulingManagerImpl extends AbstractJobController implements Sche
 		public String toString() {
 			return toJSONObject().toString();
 		}
+	}
+
+	@Override
+	public ComponentManager getComponentManager() {
+		return manager;
 	}
 
 }

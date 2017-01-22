@@ -3,7 +3,7 @@ package cn.shiyanjun.platform.scheduled.api;
 import cn.shiyanjun.platform.api.Context;
 import redis.clients.jedis.JedisPool;
 
-public interface ComponentManager {
+public interface ComponentManager extends ScheduledController {
 
 	String getPlatformId();
 	Context getContext();
@@ -20,7 +20,6 @@ public interface ComponentManager {
 	ResourceManager getResourceManager();
 	RestExporter getRestExporter();
 	RecoveryManager getRecoveryManager();
-	JobController getJobController();
 	
 	JedisPool getJedisPool();
 

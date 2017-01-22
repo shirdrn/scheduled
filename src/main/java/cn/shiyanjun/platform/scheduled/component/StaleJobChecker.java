@@ -168,7 +168,7 @@ class StaleJobChecker implements Runnable {
 							sched.incrementTimeoutTaskCount(queue);
 							// clear cancelled job from memory
 							if(targetJobStatus == JobStatus.CANCELLED) {
-								sched.jobCancelled(jobId, () -> {
+								sched.getComponentManager().jobCancelled(jobId, () -> {
 									jobInfo.lastUpdatedTime = Time.now();
 									LOG.info("Cancelled job timeout: jobId=" + jobId + "jobInfo=" + jobInfo);
 								});

@@ -2,6 +2,7 @@ package cn.shiyanjun.platform.scheduled;
 
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -10,6 +11,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.ibatis.session.SqlSessionFactory;
 
 import com.google.common.base.Strings;
+import com.google.common.collect.Sets;
 import com.rabbitmq.client.ConnectionFactory;
 
 import cn.shiyanjun.platform.api.Context;
@@ -20,7 +22,6 @@ import cn.shiyanjun.platform.api.constants.TaskType;
 import cn.shiyanjun.platform.api.utils.ComponentUtils;
 import cn.shiyanjun.platform.api.utils.Pair;
 import cn.shiyanjun.platform.scheduled.api.ComponentManager;
-import cn.shiyanjun.platform.scheduled.api.JobController;
 import cn.shiyanjun.platform.scheduled.api.JobFetcher;
 import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
 import cn.shiyanjun.platform.scheduled.api.MQAccessService;
@@ -73,6 +74,9 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	private ResourceManager resourceManager;
 	private RestExporter restManageable;
 	private RestServer restServer;
+	
+	private static final Set<Integer> cancellingJobs = Sets.newConcurrentHashSet();
+	protected volatile boolean isSchedulingOpened = true;
 	
 	public ScheduledMain(final Context context) {
 		super(context);
@@ -229,8 +233,40 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	}
 	
 	@Override
-	public JobController getJobController() {
-		return schedulingManager;
+	public boolean cancelJob(int jobId) {
+		LOG.info("Prepare to cancel job: jobId=" + jobId);
+		cancellingJobs.add(jobId);
+		return schedulingManager.cancelJobInternal(jobId);
+	}
+	
+	@Override
+	public boolean cancelJob(int jobId, Runnable action) {
+		LOG.info("Prepare to cancel job: jobId=" + jobId);
+		action.run();
+		return cancellingJobs.add(jobId);
+	}
+
+	@Override
+	public boolean shouldCancelJob(int jobId) {
+		return cancellingJobs.contains(jobId);
+	}
+
+	@Override
+	public void jobCancelled(int jobId, Runnable action) {
+		action.run();
+		cancellingJobs.remove(jobId);
+		LOG.info("Job cancelled: jobId=" + jobId);
+	}
+	
+	
+	@Override
+	public boolean isSchedulingOpened() {
+		return isSchedulingOpened;
+	}
+
+	@Override
+	public void setSchedulingOpened(boolean isSchedulingOpened) {
+		this.isSchedulingOpened = isSchedulingOpened;
 	}
 	
 	public static void main(String[] args) {
