@@ -64,7 +64,7 @@ public class SchedulingManagerImpl implements SchedulingManager {
 	private final MQAccessService taskMQAccessService;
 	private final MQAccessService heartbeatMQAccessService;
 	private volatile boolean running = true;
-	private final SchedulingPolicy schedulingPolicy;
+	private SchedulingPolicy schedulingPolicy;
 	private final ResourceManager resourceManager;
 	private final FreshTasksResponseProcessingManager freshTasksResponseProcessingManager;
 	private final BlockingQueue<Heartbeat> rawHeartbeatMessages = Queues.newLinkedBlockingQueue();
@@ -80,11 +80,11 @@ public class SchedulingManagerImpl implements SchedulingManager {
 		resourceManager = componentManager.getResourceManager();
 		freshTasksResponseProcessingManager = new FreshTasksResponseProcessingManager();
 		staleJobChecker = new StaleJobChecker(this);
-		schedulingPolicy = new MaxConcurrencySchedulingPolicy(componentManager);
 	}
 	
 	@Override
 	public void start() {
+		schedulingPolicy = new MaxConcurrencySchedulingPolicy(componentManager);
 		stateManager = componentManager.getStateManager();
 		taskResponseHandlingController = new SimpleTaskResponseHandlingController(componentManager);
 		
@@ -368,7 +368,8 @@ public class SchedulingManagerImpl implements SchedulingManager {
 				case SUCCEEDED:
 					LOG.info("Task succeeded: " + taskResponse);
 					taskResponseHandlingController.releaseResource(queue, id, isTenuredTasksResponse);
-					stateManager.updateTaskStatus(id, taskStatus, taskResponse);
+					stateManager.updateTaskStatus(id.getTaskId(), taskStatus, 
+							Optional.ofNullable(taskResponse.getInteger(ScheduledConstants.RESULT_COUNT)));
 					processJobStatus(jobInfo, id, taskStatus);
 					
 					taskResponseHandlingController.incrementSucceededTaskCount(queue, taskResponse);
@@ -377,7 +378,7 @@ public class SchedulingManagerImpl implements SchedulingManager {
 				case FAILED:
 					LOG.info("Task failed: " + taskResponse);
 					taskResponseHandlingController.releaseResource(queue, id, isTenuredTasksResponse);
-					stateManager.updateTaskStatus(id, taskStatus, taskResponse);
+					stateManager.updateTaskStatus(id.getTaskId(), taskStatus);
 					processJobStatus(jobInfo, id, taskStatus);
 					
 					taskResponseHandlingController.incrementFailedTaskCount(queue, taskResponse);
@@ -407,7 +408,7 @@ public class SchedulingManagerImpl implements SchedulingManager {
 		int jobId = jobInfo.getJobId();
 		String queue = jobInfo.getQueue();
 		int taskCount = jobInfo.getTaskCount();
-		Collection<TaskInfo> tasks = stateManager.getRunningTasks();
+		Collection<TaskInfo> tasks = stateManager.getRunningTasks(jobId);
 		
 		TaskStatus status = taskStatus;
 		JobStatus jobStatus = jobInfo.getJobStatus();
@@ -519,30 +520,30 @@ public class SchedulingManagerImpl implements SchedulingManager {
 		@Override
 		public void handleDelivery(String consumerTag, Envelope envelope, BasicProperties properties, byte[] body)
 				throws IOException {
-			if(body != null) {
+			Optional.ofNullable(body).ifPresent(b -> {
 				try {
 					// resolve the returned message
 					long deliveryTag = envelope.getDeliveryTag();
-						String message = new String(body);
-						LOG.info("Message received: deliveryTag=" + deliveryTag + ", message=" + message);
-
-						JSONObject heartbeatMessage = JSONObject.parseObject(message);
-						if(heartbeatMessage.containsKey(JSONKeys.TYPE)) {
-							String type = heartbeatMessage.getString(JSONKeys.TYPE);
-							switch(type) {
-								case ScheduledConstants.HEARTBEAT_TYPE_TASK_PROGRESS:
-									if(taskResponseHandlingController.isValid(heartbeatMessage)) {
-										Heartbeat hb = new Heartbeat(getChannel(), heartbeatMessage, deliveryTag);
-										rawHeartbeatMessages.add(hb);
-										LOG.info("Added to rawHeartbeatMessages: " + hb);
-									} else {
-										LOG.warn("Invalid tasks response: " + heartbeatMessage);
-										sendAck(getChannel(), deliveryTag);
-									}
-									break;
-								default:
-									LOG.warn("Unknown heartbeat: type=" + type + ", heartbeat=" + heartbeatMessage);
+					String message = new String(b);
+					LOG.info("Message received: deliveryTag=" + deliveryTag + ", message=" + message);
+					
+					JSONObject heartbeatMessage = JSONObject.parseObject(message);
+					if(heartbeatMessage.containsKey(JSONKeys.TYPE)) {
+						String type = heartbeatMessage.getString(JSONKeys.TYPE);
+						switch(type) {
+						case ScheduledConstants.HEARTBEAT_TYPE_TASK_PROGRESS:
+							if(taskResponseHandlingController.isValid(heartbeatMessage)) {
+								Heartbeat hb = new Heartbeat(getChannel(), heartbeatMessage, deliveryTag);
+								rawHeartbeatMessages.add(hb);
+								LOG.info("Added to rawHeartbeatMessages: " + hb);
+							} else {
+								LOG.warn("Invalid tasks response: " + heartbeatMessage);
+								sendAck(getChannel(), deliveryTag);
 							}
+							break;
+						default:
+							LOG.warn("Unknown heartbeat: type=" + type + ", heartbeat=" + heartbeatMessage);
+						}
 					} else {
 						// Ack unknown message
 						sendAck(getChannel(), deliveryTag);
@@ -550,22 +551,23 @@ public class SchedulingManagerImpl implements SchedulingManager {
 				} catch (Exception e) {
 					LOG.warn("Fail to consume message: ", e);
 				}
-			}
-			
+			});
 		}
 		
 	}
 	
 	private boolean sendAck(Channel channel, long deliveryTag) {
-		try {
-			if(channel != null && channel.isOpen()) {
-				channel.basicAck(deliveryTag, false);
+		return Optional.ofNullable(channel)
+				.filter(ch -> ch.isOpen())
+				.map(ch -> {
+			try {
+				ch.basicAck(deliveryTag, false);
+			} catch (Exception e) {
+				LOG.warn("Fail to send ack: deliveryTag=" + deliveryTag, e);
+				return false;
 			}
-		} catch (Exception e) {
-			LOG.warn("Fail to send ack: deliveryTag=" + deliveryTag, e);
-			return false;
-		}
-		return true;
+			return true;
+		}).orElse(false);
 	}
 	
 	@Override

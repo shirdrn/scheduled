@@ -87,6 +87,62 @@ public class StateManagerImpl extends AbstractComponent implements StateManager 
 		return jobInfo.map(ji -> ji.getQueue());
 	}
 	
+	@Override
+	public void handleInMemoryCompletedJob(int jobId) {
+		JobInfo current = runningJobIdToInfos.get(jobId);
+		JobStatus jobStatus = current.getJobStatus();
+		if(current != null && (jobStatus == JobStatus.SUCCEEDED 
+				|| jobStatus == JobStatus.FAILED 
+				|| jobStatus == JobStatus.TIMEOUT 
+				|| jobStatus == JobStatus.CANCELLED)) {
+			LOG.info("Moving in-mem job: runningJobIdToInfos -> completedJobIdToInfos");
+			runningJobToTaskList.remove(jobId).stream().forEach(id -> {
+				TaskInfo ti = runningTaskIdToInfos.remove(id);
+				LOG.info("In-mem task removed: " + ti);
+			});
+			
+			JobInfo removedJobInfo = runningJobIdToInfos.remove(jobId);
+			// move job to completed queue
+			completedJobIdToInfos.putIfAbsent(jobId, removedJobInfo);
+			LOG.info("In-mem job moved: " + removedJobInfo);
+			
+			// clear history job/tasks which exceeded the maximum capacity of completed queue
+			if(completedJobIdToInfos.size() > 2 * keptHistoryJobMaxCount) {
+				LOG.info("Clear in-mem jobs: queue=completedJobIdToInfos" + ", size=" + completedJobIdToInfos.size() + ", keptHistoryJobCount=" + keptHistoryJobMaxCount);
+				completedJobIdToInfos.values().stream()
+				.sorted((x, y) -> x.getLastUpdatedTime() - y.getLastUpdatedTime() < 0 ? -1 : 1)
+				.limit(keptHistoryJobMaxCount)
+				.forEach(ti -> {
+					JobInfo ji = completedJobIdToInfos.remove(ti.getJobId());
+					LOG.info("In-mem job removed: " + ji);
+				});
+			}
+		}
+	}
+	
+	@Override
+	public void handleInMemoryCompletedJob(TaskID id) {
+		if(id != null) {
+			// remove job/task from running queue
+			handleInMemoryCompletedJob(id.getJobId());
+		}
+	}
+
+	@Override
+	public void handleInMemoryTimeoutJob(JobInfo jobInfo, int keptTimeoutJobMaxCount) {
+		jobInfo.setLastUpdatedTime(Time.now());
+		timeoutJobIdToInfos.putIfAbsent(jobInfo.getJobId(), jobInfo);
+		jobInfo.setJobStatus(JobStatus.TIMEOUT);;
+		if(timeoutJobIdToInfos.size() > 2 * keptTimeoutJobMaxCount) {
+			timeoutJobIdToInfos.values().stream()
+			.sorted((x, y) -> x.getLastUpdatedTime() - y.getLastUpdatedTime() < 0 ? -1 : 1)
+			.limit(keptTimeoutJobMaxCount)
+			.forEach(ji -> {
+				timeoutJobIdToInfos.remove(ji.getJobId());
+			});
+		}		
+	}
+	
 	
 	/////////////////////////////////////////////////////////////
 
@@ -176,42 +232,36 @@ public class StateManagerImpl extends AbstractComponent implements StateManager 
 
 	
 	@Override
-	public void updateTaskStatus(int jobId, int taskId, TaskStatus taskStatus) {
-		updateTaskStatus(jobId, taskId, taskStatus, Time.now());		
+	public void updateTaskStatus(int taskId, TaskStatus taskStatus) {
+		updateTaskStatus(taskId, taskStatus, Time.now());		
 	}
 
 	@Override
-	public void updateTaskStatus(int jobId, int taskId, TaskStatus taskStatus, long timestamp) {
+	public void updateTaskStatus(int taskId, TaskStatus taskStatus, long timestamp) {
 		Timestamp updateTime = new Timestamp(timestamp);
-		Task userTask = new Task();
-		userTask.setId(taskId);
-		userTask.setStatus(taskStatus.getCode());
-		userTask.setDoneTime(updateTime);
-		taskPersistenceService.updateTaskByID(userTask);
-		LOG.info("In-db task state changed: jobId=" + jobId + ", taskId=" + taskId + 
+		Task task = new Task();
+		task.setId(taskId);
+		task.setStatus(taskStatus.getCode());
+		task.setDoneTime(updateTime);
+		taskPersistenceService.updateTaskByID(task);
+		LOG.info("In-db task state changed: taskId=" + taskId + 
 				", updateTime=" + updateTime + ", taskStatus=" + taskStatus);		
 	}
 	
 	@Override
-	public void updateTaskStatus(TaskID id, TaskStatus taskStatus, JSONObject taskResponse) {
-		Integer resultCount = taskResponse.getInteger(ScheduledConstants.RESULT_COUNT);;
-		if(resultCount != null) {
-			int jobId = id.getJobId();
-			int taskId = id.getTaskId();
+	public void updateTaskStatus(int  taskId, TaskStatus taskStatus, Optional<Integer> resultCount) {
+		resultCount.ifPresent(count -> {
 			Timestamp updateTime = new Timestamp(Time.now());
 			Task task = new Task();
 			task.setId(taskId);
 			task.setStatus(taskStatus.getCode());
 			task.setDoneTime(updateTime);
-			if(resultCount != null) {
-				task.setResultCount(resultCount);
-			}
+			task.setResultCount(count);
 			taskPersistenceService.updateTaskByID(task);
-			LOG.info("In-db task state changed: jobId=" + jobId + 
-					", taskId=" + taskId + ", seqNo=" + id.getSeqNo() + 
-					", resultCount=" + resultCount + ", updateTime=" + updateTime + 
-					", taskStatus=" + taskStatus);
-		}
+			LOG.info("In-db task state changed: " + 
+					", taskId=" + taskId + ", resultCount=" + count + 
+					", updateTime=" + updateTime + ", taskStatus=" + taskStatus);
+		});
 	}
 	
 	@Override
@@ -330,8 +380,8 @@ public class StateManagerImpl extends AbstractComponent implements StateManager 
 	}
 
 	@Override
-	public Job retrieveJob(int jobId) {
-		return jobPersistenceService.retrieveJob(jobId);
+	public Optional<Job> retrieveJob(int jobId) {
+		return Optional.ofNullable(jobPersistenceService.retrieveJob(jobId));
 	}
 
 	@Override
@@ -340,8 +390,11 @@ public class StateManagerImpl extends AbstractComponent implements StateManager 
 	}
 
 	@Override
-	public Collection<TaskInfo> getRunningTasks() {
-		return runningTaskIdToInfos.values();
+	public Collection<TaskInfo> getRunningTasks(int jobId) {
+		return runningJobToTaskList.get(jobId)
+				.stream()
+				.map(id -> runningTaskIdToInfos.get(id))
+				.collect(Collectors.toList());
 	}
 	
 	@Override
@@ -400,15 +453,17 @@ public class StateManagerImpl extends AbstractComponent implements StateManager 
 
 	@Override
 	public boolean isJobCompleted(int jobId) {
-		Job job = retrieveJob(jobId);
-		JobStatus currentStatus = JobStatus.valueOf(job.getStatus()).get();
-		if(job != null) {
+		Optional<Job> job = retrieveJob(jobId);
+		return job.map(j -> {
+			JobStatus currentStatus = JobStatus.valueOf(j.getStatus()).get();
 			if(currentStatus == JobStatus.SUCCEEDED
-					|| currentStatus == JobStatus.FAILED) {
+					|| currentStatus == JobStatus.FAILED
+					|| currentStatus == JobStatus.CANCELLED) {
 				return true;
+			} else {
+				return false;
 			}
-		}
-		return false;
+		}).orElse(true);
 	}
 
 	@Override
@@ -426,66 +481,6 @@ public class StateManagerImpl extends AbstractComponent implements StateManager 
 					|| cJI.getJobStatus() == JobStatus.CANCELLED;
 		}
 		return false;
-	}
-	
-	
-	/////////////////////////////////////////////////////////////
-	
-	
-	@Override
-	public void handleInMemoryCompletedJob(int jobId) {
-		JobInfo current = runningJobIdToInfos.get(jobId);
-		JobStatus jobStatus = current.getJobStatus();
-		if(current != null && (jobStatus == JobStatus.SUCCEEDED 
-				|| jobStatus == JobStatus.FAILED 
-				|| jobStatus == JobStatus.TIMEOUT 
-				|| jobStatus == JobStatus.CANCELLED)) {
-			LOG.info("Moving in-mem job: runningJobIdToInfos -> completedJobIdToInfos");
-			runningJobToTaskList.remove(jobId).stream().forEach(id -> {
-				TaskInfo ti = runningTaskIdToInfos.remove(id);
-				LOG.info("In-mem task removed: " + ti);
-			});
-			
-			JobInfo removedJobInfo = runningJobIdToInfos.remove(jobId);
-			// move job to completed queue
-			completedJobIdToInfos.putIfAbsent(jobId, removedJobInfo);
-			LOG.info("In-mem job moved: " + removedJobInfo);
-			
-			// clear history job/tasks which exceeded the maximum capacity of completed queue
-			if(completedJobIdToInfos.size() > 2 * keptHistoryJobMaxCount) {
-				LOG.info("Clear in-mem jobs: queue=completedJobIdToInfos" + ", size=" + completedJobIdToInfos.size() + ", keptHistoryJobCount=" + keptHistoryJobMaxCount);
-				completedJobIdToInfos.values().stream()
-				.sorted((x, y) -> x.getLastUpdatedTime() - y.getLastUpdatedTime() < 0 ? -1 : 1)
-				.limit(keptHistoryJobMaxCount)
-				.forEach(ti -> {
-					JobInfo ji = completedJobIdToInfos.remove(ti.getJobId());
-					LOG.info("In-mem job removed: " + ji);
-				});
-			}
-		}
-	}
-	
-	@Override
-	public void handleInMemoryCompletedJob(TaskID id) {
-		if(id != null) {
-			// remove job/task from running queue
-			handleInMemoryCompletedJob(id.getJobId());
-		}
-	}
-
-	@Override
-	public void handleInMemoryTimeoutJob(JobInfo jobInfo, int keptTimeoutJobMaxCount) {
-		jobInfo.setLastUpdatedTime(Time.now());
-		timeoutJobIdToInfos.putIfAbsent(jobInfo.getJobId(), jobInfo);
-		jobInfo.setJobStatus(JobStatus.TIMEOUT);;
-		if(timeoutJobIdToInfos.size() > 2 * keptTimeoutJobMaxCount) {
-			timeoutJobIdToInfos.values().stream()
-			.sorted((x, y) -> x.getLastUpdatedTime() - y.getLastUpdatedTime() < 0 ? -1 : 1)
-			.limit(keptTimeoutJobMaxCount)
-			.forEach(ji -> {
-				timeoutJobIdToInfos.remove(ji.getJobId());
-			});
-		}		
 	}
 
 }

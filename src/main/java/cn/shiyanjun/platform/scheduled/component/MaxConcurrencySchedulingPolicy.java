@@ -18,7 +18,7 @@ import cn.shiyanjun.platform.scheduled.api.ComponentManager;
 import cn.shiyanjun.platform.scheduled.api.JobQueueingService;
 import cn.shiyanjun.platform.scheduled.api.ResourceManager;
 import cn.shiyanjun.platform.scheduled.api.SchedulingPolicy;
-import cn.shiyanjun.platform.scheduled.api.TaskPersistenceService;
+import cn.shiyanjun.platform.scheduled.api.StateManager;
 import cn.shiyanjun.platform.scheduled.common.TaskOrder;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 import cn.shiyanjun.platform.scheduled.dao.entities.Task;
@@ -35,13 +35,13 @@ public class MaxConcurrencySchedulingPolicy implements SchedulingPolicy {
 
 	private static final Log LOG = LogFactory.getLog(MaxConcurrencySchedulingPolicy.class);
 	private final ResourceManager resourceMetadataManager;
-	private final TaskPersistenceService taskPersistenceService;
+	private final StateManager stateManager;
 	private final ComponentManager componentManager;
 
 	public MaxConcurrencySchedulingPolicy(ComponentManager componentManager) {
 		super();
 		this.componentManager = componentManager;
-        this.taskPersistenceService = componentManager.getTaskPersistenceService();
+		stateManager = componentManager.getStateManager();
         this.resourceMetadataManager = componentManager.getResourceManager();
 	}
 
@@ -68,11 +68,13 @@ public class MaxConcurrencySchedulingPolicy implements SchedulingPolicy {
                     int seqNo = jsonObject.getIntValue(ScheduledConstants.SEQ_NO);
                     int taskCount = jsonObject.getIntValue(ScheduledConstants.TASK_COUNT);
                     
-                    if(jobStatus.equals(JobStatus.QUEUEING.toString())) {
+                    JobStatus js = JobStatus.valueOf(jobStatus);
+                    TaskStatus ts = TaskStatus.valueOf(taskStatus);
+                    if(js == JobStatus.QUEUEING) {
                     	// priority of a task belonging a RUNNING job is higher than new tasks of submitted jobs
                     	// (job, task) = (QUEUEING, SUCCEEDED)
-                    	if(taskStatus.equals(TaskStatus.SUCCEEDED.toString())) {
-                    		List<Task> tasks = taskPersistenceService.getTasksFor(jobId);
+                    	if(ts == TaskStatus.SUCCEEDED) {
+                    		List<Task> tasks = stateManager.retrieveTasks(jobId);
                         	if(tasks != null && !tasks.isEmpty()) {
                         		Task utask = null;
                         		for(Task t : tasks) {
@@ -88,9 +90,9 @@ public class MaxConcurrencySchedulingPolicy implements SchedulingPolicy {
                         			got = Optional.of(taskOrder);
                         		}
                         	}
-                    	} else if(taskStatus.equals(TaskStatus.CREATED.toString())) {
+                    	} else if(ts == TaskStatus.CREATED) {
                     		// (job, task) = (QUEUEING, CREATED)
-                    		List<Task> tasksBelongingJob = taskPersistenceService.getTasksFor(jobId);
+                    		List<Task> tasksBelongingJob = stateManager.retrieveTasks(jobId);
                         	if(tasksBelongingJob != null && !tasksBelongingJob.isEmpty()) {
                         		Task ut = tasksBelongingJob.get(0);
                         		if(taskType.getCode() == ut.getTaskType()) {

@@ -2,6 +2,7 @@ package cn.shiyanjun.platform.scheduled.component;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -82,11 +83,11 @@ class StaleJobChecker implements Runnable {
 					String queue = jobInfo.getQueue();
 					tasks.forEach(task -> {
 						if(task.getStatus() == TaskStatus.RUNNING.getCode()) {
-							stateManager.getRunningTasks().forEach(ti -> {
+							stateManager.getRunningTasks(jobId).forEach(ti -> {
 								if(ti != null && ti.getTaskStatus() == TaskStatus.RUNNING 
 										&& sched.componentManager.getPlatformId().equals(ti.getPlatformId())) {
 									sched.releaseResource(queue, ti);
-									stateManager.updateTaskStatus(jobId, ti.getTaskId(), TaskStatus.TIMEOUT);
+									stateManager.updateTaskStatus(ti.getTaskId(), TaskStatus.TIMEOUT);
 									sched.incrementTimeoutTaskCount(queue);
 									sched.updateJobStatCounter(queue, JobStatus.TIMEOUT);
 								}
@@ -103,14 +104,14 @@ class StaleJobChecker implements Runnable {
 					stateManager.removeQueuedJob(queue, jobId);
 					stateManager.handleInMemoryTimeoutJob(jobInfo, keptTimeoutJobMaxCount);
 				});
-//				stateManager.updateJobStatus(job.getId(), JobStatus.TIMEOUT)
+				stateManager.updateJobStatus(job.getId(), JobStatus.TIMEOUT);
 				
 				// check running tasks
 				tasks.stream().forEach(task -> {
 					// task with RUNNING status
-					TaskStatus taskStatus = TaskStatus.valueOfCode(task.getStatus()).get();
+					TaskStatus taskStatus = TaskStatus.valueOf(task.getStatus()).get();
 					if(taskStatus == TaskStatus.RUNNING) {
-						stateManager.updateTaskStatus(jobId, task.getId(), TaskStatus.TIMEOUT);
+						stateManager.updateTaskStatus(task.getId(), TaskStatus.TIMEOUT);
 					}
 				});
 			}
@@ -143,11 +144,12 @@ class StaleJobChecker implements Runnable {
 					jobInfo.unlock();
 				}
 				
-				stateManager.getRunningTasks().forEach(ti -> {
-					if(ti != null && (ti.getTaskStatus() == TaskStatus.RUNNING || targetJobStatus == JobStatus.CANCELLED)
+				stateManager.getRunningTasks(jobId).forEach(ti -> {
+					if(ti != null && 
+							(ti.getTaskStatus() == TaskStatus.RUNNING || targetJobStatus == JobStatus.CANCELLED)
 							&& sched.componentManager.getPlatformId().equals(ti.getPlatformId())) {
 						sched.releaseResource(queue, ti);
-						stateManager.updateTaskStatus(ti.getJobId(), ti.getTaskId(), TaskStatus.TIMEOUT);
+						stateManager.updateTaskStatus(ti.getTaskId(), TaskStatus.TIMEOUT);
 						sched.incrementTimeoutTaskCount(queue);
 						// clear cancelled job from memory
 						if(targetJobStatus == JobStatus.CANCELLED) {
@@ -176,8 +178,8 @@ class StaleJobChecker implements Runnable {
 				JobStatus jobStatus = JobStatus.valueOf(jStatus);
 				long lastUpdateTs = job.getLongValue(ScheduledConstants.LAST_UPDATE_TS);
 				
-				JobInfo jobInfo = stateManager.getRunningJob(jobId).get();
-				if(jobInfo == null) {
+				Optional<JobInfo> jobInfo = stateManager.getRunningJob(jobId);
+				jobInfo.ifPresent(ji -> {
 					// clear job with FAILED status from Redis queue
 					if(jobStatus == JobStatus.FAILED) {
 						stateManager.removeQueuedJob(queue, jobId);
@@ -191,7 +193,7 @@ class StaleJobChecker implements Runnable {
 						stateManager.removeQueuedJob(queue, jobId);
 						LOG.warn("Stale job in Redis purged: queue=" + queue + ", job=" + job);
 					}
-				}
+				});
 			});
 		});
 	}
