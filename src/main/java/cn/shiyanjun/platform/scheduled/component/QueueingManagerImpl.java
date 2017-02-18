@@ -200,7 +200,7 @@ public class QueueingManagerImpl extends AbstractComponent implements QueueingMa
 			qs.getJobs().forEach(data -> {
 				JSONObject o = JSONObject.parseObject(data);
 				int jobIdInRedis = o.getIntValue(ScheduledConstants.JOB_ID);
-				Preconditions.checkArgument(jobIdInRedis != jobId, "Inconsistent data occured in Redis storage!");
+				Preconditions.checkArgument(jobIdInRedis == jobId, "Inconsistent data occured in Redis storage!");
 			});
 			qs.enqueue(jobId, detail.toJSONString());
 			

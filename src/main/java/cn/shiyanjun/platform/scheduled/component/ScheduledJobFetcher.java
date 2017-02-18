@@ -11,7 +11,7 @@ import org.apache.commons.logging.LogFactory;
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Preconditions;
 
-import cn.shiyanjun.platform.api.common.AbstractComponent;
+import cn.shiyanjun.platform.api.Context;
 import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.utils.NamedThreadFactory;
 import cn.shiyanjun.platform.api.utils.Pair;
@@ -32,11 +32,11 @@ import cn.shiyanjun.platform.scheduled.protocols.JobOrchestrationProtocolManager
  * 
  * @author yanjun
  */
-public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher {
+public class ScheduledJobFetcher implements JobFetcher {
 
 	private static final Log LOG = LogFactory.getLog(ScheduledJobFetcher.class);
 	private static final int INITIAL_DELAY_TIME = 5000;
-	private final ComponentManager manager;
+	private final ComponentManager componentManager;
 	private ScheduledExecutorService fetchJobPool;
 	private final int fetchJobInterval;
 	private final JobPersistenceService jobPersistenceService;
@@ -47,9 +47,10 @@ public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher
 	private volatile String maintenanceSegmentStartTime;
 	private volatile String maintenanceSegmentEndTime;
 	
-	public ScheduledJobFetcher(ComponentManager manager) {
-		super(manager.getContext());
-		this.manager = manager;
+	public ScheduledJobFetcher(ComponentManager componentManager) {
+		super();
+		this.componentManager = componentManager;
+		Context context = componentManager.getContext();
 		fetchJobInterval = context.getInt(ConfigKeys.SCHEDULED_FETCH_JOB_INTERVAL_MILLIS, 3000);
 		LOG.info("Configs: fetchJobInterval=" + fetchJobInterval + ", initialDelay=" + INITIAL_DELAY_TIME);
 		
@@ -57,7 +58,7 @@ public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher
 		maintenanceSegmentEndTime = context.get(ConfigKeys.SCHEDULED_MAINTENANCE_TIME_SEGMENT_END, "03:30:00");
 		LOG.info("Configs: maintenanceSegmentStartTime=" + maintenanceSegmentStartTime + ", maintenanceSegmentEndTime=" + maintenanceSegmentEndTime);
 		
-		jobPersistenceService = manager.getJobPersistenceService();
+		jobPersistenceService = componentManager.getJobPersistenceService();
 		
 		jobOrchestrationProtocolManager = new JobOrchestrationProtocolManager(context);
 		jobOrchestrationProtocolManager.initialize();
@@ -66,7 +67,7 @@ public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher
 		jobOrchestrationProtocol = jobOrchestrationProtocolManager.ofType(jobOrchestrationStringProtocol);
 		LOG.info("Protocol: jobOrchestrationProtocol=" + jobOrchestrationProtocol);
 		
-		jobFetchProtocolManager = new JobFetchProtocolManager(manager, context);
+		jobFetchProtocolManager = new JobFetchProtocolManager(componentManager, context);
 		jobFetchProtocolManager.initialize();
 		String jobFetchStringProtocol = context.get(ConfigKeys.SERVICE_JOB_FETCH_PROTOCOL);
 		Preconditions.checkArgument(jobFetchStringProtocol != null);
@@ -123,7 +124,7 @@ public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher
 		}
 		
 		private boolean shouldTryToFetch() {
-			if(manager.isSchedulingOpened()) {
+			if(componentManager.isSchedulingOpened()) {
 				String start = maintenanceSegmentStartTime.replaceAll(":", "");
 				String end = maintenanceSegmentEndTime.replaceAll(":", "");
 				String current = Time.formatCurrentHourTime().replaceAll(":", "");
@@ -148,8 +149,8 @@ public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher
 				Integer jobId = null;
 				try{
 					jobId = job.getId();
-					if(manager.shouldCancelJob(jobId)) {
-						manager.jobCancelled(jobId, () -> {
+					if(componentManager.shouldCancelJob(jobId)) {
+						componentManager.jobCancelled(jobId, () -> {
 							job.setStatus(JobStatus.CANCELLED.getCode()); 
 							jobPersistenceService.updateJobByID(job);
 						});
@@ -167,7 +168,7 @@ public class ScheduledJobFetcher extends AbstractComponent implements JobFetcher
 						
 						if(!jobData.isEmpty()) {
 							// prepare to execute queueing
-							manager.getQueueingManager().collect(jobData);
+							componentManager.getQueueingManager().collect(jobData);
 						}
 					}
 				} catch(Exception e) {

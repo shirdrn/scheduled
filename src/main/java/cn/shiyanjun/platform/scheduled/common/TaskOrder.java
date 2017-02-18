@@ -5,11 +5,13 @@ import cn.shiyanjun.platform.scheduled.dao.entities.Task;
 
 public class TaskOrder {
 
+	private String queue;
 	private Task task;
 	private int taskCount;
 	
-	public TaskOrder(Task task) {
+	public TaskOrder(String queue, Task task) {
 		super();
+		this.queue = queue;
 		this.task = task;
 	}
 	
@@ -26,6 +28,10 @@ public class TaskOrder {
 		this.taskCount = taskCount;
 	}
 	
+	public String getQueue() {
+		return queue;
+	}
+	
 	@Override
 	public String toString() {
 		return " jobId=" + task.getJobId() + 
@@ -34,5 +40,5 @@ public class TaskOrder {
 				", taskType=" + TaskType.fromCode(task.getTaskType()) + 
 				", taskCount=" + taskCount;
 	}
-	
+
 }

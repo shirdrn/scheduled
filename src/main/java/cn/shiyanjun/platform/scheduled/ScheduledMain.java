@@ -31,10 +31,9 @@ import cn.shiyanjun.platform.scheduled.api.ResourceManager;
 import cn.shiyanjun.platform.scheduled.api.RestExporter;
 import cn.shiyanjun.platform.scheduled.api.RestServer;
 import cn.shiyanjun.platform.scheduled.api.SchedulingManager;
-import cn.shiyanjun.platform.scheduled.api.SchedulingPolicy;
+import cn.shiyanjun.platform.scheduled.api.StateManager;
 import cn.shiyanjun.platform.scheduled.api.TaskPersistenceService;
 import cn.shiyanjun.platform.scheduled.component.JobPersistenceServiceImpl;
-import cn.shiyanjun.platform.scheduled.component.MaxConcurrencySchedulingPolicy;
 import cn.shiyanjun.platform.scheduled.component.QueueingManagerImpl;
 import cn.shiyanjun.platform.scheduled.component.RabbitMQAccessService;
 import cn.shiyanjun.platform.scheduled.component.RecoveryManagerImpl;
@@ -43,6 +42,7 @@ import cn.shiyanjun.platform.scheduled.component.ScheduledJobFetcher;
 import cn.shiyanjun.platform.scheduled.component.ScheduledRestExporter;
 import cn.shiyanjun.platform.scheduled.component.ScheduledRestServer;
 import cn.shiyanjun.platform.scheduled.component.SchedulingManagerImpl;
+import cn.shiyanjun.platform.scheduled.component.StateManagerImpl;
 import cn.shiyanjun.platform.scheduled.component.TaskPersistenceServiceImpl;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 import cn.shiyanjun.platform.scheduled.dao.DaoFactory;
@@ -70,10 +70,10 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	private TaskPersistenceService taskPersistenceService;
 	private MQAccessService taskMQAccessService;
 	private MQAccessService heartbeatMQAccessService;
-	private SchedulingPolicy schedulingPolicy;
 	private ResourceManager resourceManager;
 	private RestExporter restManageable;
 	private RestServer restServer;
+	private StateManager stateManager;
 	
 	private static final Set<Integer> cancellingJobs = Sets.newConcurrentHashSet();
 	protected volatile boolean isSchedulingOpened = true;
@@ -108,8 +108,8 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 			
 			resourceManager = new ResourceManagerImpl(context);
 			queueingManager = new QueueingManagerImpl(this);
+			stateManager = new StateManagerImpl(this);
 			jobFetcher = new ScheduledJobFetcher(this);
-			schedulingPolicy = new MaxConcurrencySchedulingPolicy(this);
 			schedulingManager = new SchedulingManagerImpl(this);
 			recoveryManager = new RecoveryManagerImpl(this);
 			restManageable = new ScheduledRestExporter(this);
@@ -183,11 +183,6 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	}
 
 	@Override
-	public SchedulingPolicy getSchedulingPolicy() {
-		return schedulingPolicy;
-	}
-
-	@Override
 	public QueueingManager getQueueingManager() {
 		return queueingManager;
 	}
@@ -258,6 +253,10 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 		LOG.info("Job cancelled: jobId=" + jobId);
 	}
 	
+	@Override
+	public StateManager getStateManager() {
+		return stateManager;
+	}
 	
 	@Override
 	public boolean isSchedulingOpened() {

@@ -1,10 +1,11 @@
 package cn.shiyanjun.platform.scheduled.component;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
+
+import com.google.common.collect.Lists;
 
 import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
@@ -22,7 +23,7 @@ public class JobPersistenceServiceImpl implements JobPersistenceService {
 
 	@Override
 	public List<Job> getJobByState(JobStatus jobStatus) {
-		List<Job> jobs = new ArrayList<>();
+		List<Job> jobs = Lists.newArrayList();
 		SqlSession sqlSession = null;
 		try {
 			sqlSession = sqlSessionFactory.openSession(true);

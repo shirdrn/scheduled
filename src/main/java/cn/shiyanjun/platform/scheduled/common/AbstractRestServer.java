@@ -14,23 +14,24 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
 import com.google.common.collect.Maps;
 
-import cn.shiyanjun.platform.api.common.AbstractComponent;
+import cn.shiyanjun.platform.api.Context;
 import cn.shiyanjun.platform.api.utils.ReflectionUtils;
 import cn.shiyanjun.platform.scheduled.api.ComponentManager;
 import cn.shiyanjun.platform.scheduled.api.RestServer;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 
-public abstract class AbstractRestServer extends AbstractComponent implements RestServer {
+public abstract class AbstractRestServer implements RestServer {
 
 	private static final Log LOG = LogFactory.getLog(AbstractRestServer.class);
 	private Map<String, Class<? extends HttpServlet>> servlets = Maps.newHashMap();
 	private final Server server;
 	private final ServletContextHandler servletContext;
-	private final ComponentManager manager;
+	private final ComponentManager componentManager;
 	
-	public AbstractRestServer(ComponentManager manager) {
-		super(manager.getContext());
-		this.manager = manager;
+	public AbstractRestServer(ComponentManager componentManager) {
+		super();
+		this.componentManager = componentManager;
+		Context context = componentManager.getContext();
 		int webPort = context.getInt(ConfigKeys.SCHEDULED_WEB_MANAGER_PORT, 8030);
 		server = new Server(webPort);
 		servletContext = new ServletContextHandler(ServletContextHandler.SESSIONS);
@@ -46,7 +47,7 @@ public abstract class AbstractRestServer extends AbstractComponent implements Re
 			servlets.keySet().forEach(path -> {
 				Class<? extends HttpServlet> servletClazz = servlets.get(path);
 				HttpServlet servlet = ReflectionUtils.newInstance(
-						servletClazz, HttpServlet.class, new Object[]{ manager });
+						servletClazz, HttpServlet.class, new Object[]{ componentManager });
 				LOG.info("Servlet instance created: path=" + path + ", servlet=" + servlet);
 				
 				servletContext.addServlet(new ServletHolder(servlet), path);

@@ -10,7 +10,6 @@ import org.apache.commons.logging.LogFactory;
 
 import com.alibaba.fastjson.JSONObject;
 
-import cn.shiyanjun.platform.api.common.AbstractComponent;
 import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.constants.TaskStatus;
 import cn.shiyanjun.platform.api.constants.TaskType;
@@ -25,25 +24,25 @@ import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 import cn.shiyanjun.platform.scheduled.dao.entities.Task;
 
 /**
- * Offer a task to be scheduled based on the maximum concurrency limits, if the resources 
+ * Offer a task to be scheduled based on the maximum concurrency policy, if the resources 
  * are available. It controls to update resource counter for the specified task type, 
  * which is managed by another component {@link ResourceManager}.
  * 
  * @see {@link ResourceManagerImpl}
  * @author yanjun
  */
-public class MaxConcurrencySchedulingPolicy extends AbstractComponent implements SchedulingPolicy {
+public class MaxConcurrencySchedulingPolicy implements SchedulingPolicy {
 
 	private static final Log LOG = LogFactory.getLog(MaxConcurrencySchedulingPolicy.class);
 	private final ResourceManager resourceMetadataManager;
 	private final TaskPersistenceService taskPersistenceService;
-	private final ComponentManager manager;
+	private final ComponentManager componentManager;
 
-	public MaxConcurrencySchedulingPolicy(ComponentManager manager) {
-		super(manager.getContext());
-		this.manager = manager;
-        this.taskPersistenceService = manager.getTaskPersistenceService();
-        this.resourceMetadataManager = manager.getResourceManager();
+	public MaxConcurrencySchedulingPolicy(ComponentManager componentManager) {
+		super();
+		this.componentManager = componentManager;
+        this.taskPersistenceService = componentManager.getTaskPersistenceService();
+        this.resourceMetadataManager = componentManager.getResourceManager();
 	}
 
 	@Override
@@ -53,7 +52,7 @@ public class MaxConcurrencySchedulingPolicy extends AbstractComponent implements
 		int availableResources = resourceMetadataManager.availableResource(queue, taskType);
 		LOG.debug("Available resources: queue=" + queue + ", taskType=" + taskType + ", resources=" + availableResources);
         if (availableResources > 0) {
-            QueueingManagerImpl.QueueingContext queueingContext = manager.getQueueingManager().getQueueingContext(queue);
+            QueueingManagerImpl.QueueingContext queueingContext = componentManager.getQueueingManager().getQueueingContext(queue);
             JobQueueingService qs = queueingContext.getJobQueueingService();
             Set<String> jobs = qs.getJobs();
             if(CollectionUtils.isNotEmpty(jobs)) {
@@ -83,7 +82,7 @@ public class MaxConcurrencySchedulingPolicy extends AbstractComponent implements
                         			}
                         		}
                         		if(taskType.getCode() == utask.getTaskType()) {
-                        			TaskOrder taskOrder = new TaskOrder(utask);
+                        			TaskOrder taskOrder = new TaskOrder(queue, utask);
                         			taskOrder.setTaskCount(taskCount);
                         			updateJobInRedisAfterTaskScheduled(qs, utask, jsonObject, taskStatus);
                         			got = Optional.of(taskOrder);
@@ -95,7 +94,7 @@ public class MaxConcurrencySchedulingPolicy extends AbstractComponent implements
                         	if(tasksBelongingJob != null && !tasksBelongingJob.isEmpty()) {
                         		Task ut = tasksBelongingJob.get(0);
                         		if(taskType.getCode() == ut.getTaskType()) {
-    	                    		TaskOrder taskOrder = new TaskOrder(ut);
+    	                    		TaskOrder taskOrder = new TaskOrder(queue, ut);
     	                			taskOrder.setTaskCount(taskCount);
     	                			updateJobInRedisAfterTaskScheduled(qs, ut, jsonObject, taskStatus);
     	                			got = Optional.of(taskOrder);

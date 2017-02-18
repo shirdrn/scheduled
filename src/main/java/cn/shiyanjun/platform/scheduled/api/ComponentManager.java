@@ -16,10 +16,10 @@ public interface ComponentManager extends ScheduledController {
 	JobFetcher getJobFetcher();
 	QueueingManager getQueueingManager();
 	SchedulingManager getSchedulingManager();
-	SchedulingPolicy getSchedulingPolicy();
 	ResourceManager getResourceManager();
 	RestExporter getRestExporter();
 	RecoveryManager getRecoveryManager();
+	StateManager getStateManager();
 	
 	JedisPool getJedisPool();
 

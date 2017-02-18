@@ -1,23 +1,16 @@
 package cn.shiyanjun.platform.scheduled.component;
 
 import java.util.Arrays;
-import java.util.LinkedList;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentMap;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import com.alibaba.fastjson.JSONObject;
-import com.google.common.collect.Maps;
-
 import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.constants.TaskStatus;
 import cn.shiyanjun.platform.api.utils.Time;
-import cn.shiyanjun.platform.scheduled.component.SchedulingManagerImpl.JobInfo;
-import cn.shiyanjun.platform.scheduled.component.SchedulingManagerImpl.TaskID;
-import cn.shiyanjun.platform.scheduled.component.SchedulingManagerImpl.TaskInfo;
+import cn.shiyanjun.platform.scheduled.api.StateManager;
+import cn.shiyanjun.platform.scheduled.common.JobInfo;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 import cn.shiyanjun.platform.scheduled.dao.entities.Job;
@@ -33,16 +26,17 @@ class StaleJobChecker implements Runnable {
 	
 	private static final Log LOG = LogFactory.getLog(StaleJobChecker.class);
 	private final SchedulingManagerImpl sched;
-	private final ConcurrentMap<Integer, JobInfo> timeoutJobIdToInfos = Maps.newConcurrentMap();
+	private final StateManager stateManager;
 	private final int keptTimeoutJobMaxCount;
 	private final int staleJobMaxThresholdSecs;
 	private final long staleJobMaxThresholdMillis;
 	
 	public StaleJobChecker(final SchedulingManagerImpl schedulingManager) {
 		this.sched = schedulingManager;
-		keptTimeoutJobMaxCount = schedulingManager.manager.getContext().getInt(ConfigKeys.SCHEDULED_KEPT_TIMEOUT_JOB_MAX_COUNT, 100);
+		this.stateManager = schedulingManager.getComponentManager().getStateManager();
+		keptTimeoutJobMaxCount = schedulingManager.componentManager.getContext().getInt(ConfigKeys.SCHEDULED_KEPT_TIMEOUT_JOB_MAX_COUNT, 100);
 		// default 2 hours
-		staleJobMaxThresholdSecs = schedulingManager.manager.getContext().getInt(ConfigKeys.SCHEDULED_STALE_JOB_MAX_THRESHOLD_SECS, 7200);
+		staleJobMaxThresholdSecs = schedulingManager.componentManager.getContext().getInt(ConfigKeys.SCHEDULED_STALE_JOB_MAX_THRESHOLD_SECS, 7200);
 		staleJobMaxThresholdMillis = staleJobMaxThresholdSecs * 1000;
 	}
 	
@@ -73,10 +67,7 @@ class StaleJobChecker implements Runnable {
 	private void checkInDBStaleJobs() {
 		// check a in-db stale job with status in (FETCHED, SCHEDULED, RUNNING)
 		Arrays.asList(new JobStatus[]{JobStatus.FETCHED, JobStatus.SCHEDULED, JobStatus.RUNNING})
-			.forEach(status -> {
-				List<Job> jobs = sched.getJobByState(status);
-				processInDBStaleJobs(jobs);
-		});
+			.forEach(status -> processInDBStaleJobs(stateManager.retrieveJobs(status)));
 	}
 
 	private void processInDBStaleJobs(List<Job> jobs) {
@@ -86,45 +77,40 @@ class StaleJobChecker implements Runnable {
 			// check whether a job is timeout
 			if(now - job.getDoneTime().getTime() > staleJobMaxThresholdMillis) {
 				LOG.info("Stale in-db job: jobId=" + jobId);
-				List<Task> tasks = sched.getTasksFor(job.getId());
-				JobInfo jobInfo = sched.runningJobIdToInfos.get(jobId);
-				if(jobInfo == null) {
-					sched.updateJobInfo(job.getId(), JobStatus.TIMEOUT);
-				} else {
-					String queue = jobInfo.queue;
+				List<Task> tasks = stateManager.retrieveTasks(jobId);
+				stateManager.getRunningJob(jobId).ifPresent(jobInfo -> {
+					String queue = jobInfo.getQueue();
 					tasks.forEach(task -> {
 						if(task.getStatus() == TaskStatus.RUNNING.getCode()) {
-							LinkedList<TaskID> inMemTasks = sched.runningJobToTaskList.get(jobId);
-							if(inMemTasks != null) {
-								inMemTasks.forEach(id -> {
-									TaskInfo ti = sched.runningTaskIdToInfos.get(id);
-									if(ti != null && ti.taskStatus == TaskStatus.RUNNING 
-											&& sched.manager.getPlatformId().equals(ti.platformId)) {
-										sched.releaseResource(queue, ti.jobId, ti.taskId, ti.taskType);
-										sched.updateTaskInfo(ti.id, TaskStatus.TIMEOUT);
-										sched.incrementTimeoutTaskCount(queue);
-										sched.updateJobStatCounter(queue, JobStatus.TIMEOUT);
-									}
-								});
-							}
+							stateManager.getRunningTasks().forEach(ti -> {
+								if(ti != null && ti.getTaskStatus() == TaskStatus.RUNNING 
+										&& sched.componentManager.getPlatformId().equals(ti.getPlatformId())) {
+									sched.releaseResource(queue, ti);
+									stateManager.updateTaskStatus(jobId, ti.getTaskId(), TaskStatus.TIMEOUT);
+									sched.incrementTimeoutTaskCount(queue);
+									sched.updateJobStatCounter(queue, JobStatus.TIMEOUT);
+								}
+							});
 						}
 					});
 					try {
-						jobInfo.inMemJobUpdateLock.lock();
-						jobInfo.jobStatus = JobStatus.TIMEOUT;
+						jobInfo.lock();
+						jobInfo.setJobStatus(JobStatus.TIMEOUT);
 					} finally {
-						jobInfo.inMemJobUpdateLock.unlock();
+						jobInfo.unlock();
 					}
-					sched.handleInMemoryCompletedTask(jobId);
-					sched.removeRedisJob(queue, jobId);
-					handleTimeoutInMemTask(jobInfo, now);
-				}
+					stateManager.handleInMemoryCompletedJob(jobId);
+					stateManager.removeQueuedJob(queue, jobId);
+					stateManager.handleInMemoryTimeoutJob(jobInfo, keptTimeoutJobMaxCount);
+				});
+//				stateManager.updateJobStatus(job.getId(), JobStatus.TIMEOUT)
 				
 				// check running tasks
-				tasks.forEach(task -> {
+				tasks.stream().forEach(task -> {
 					// task with RUNNING status
-					if(task.getStatus() == TaskStatus.RUNNING.getCode()) {
-						sched.updateTaskInfo(job.getId(), task.getId(), TaskStatus.FAILED);
+					TaskStatus taskStatus = TaskStatus.valueOfCode(task.getStatus()).get();
+					if(taskStatus == TaskStatus.RUNNING) {
+						stateManager.updateTaskStatus(jobId, task.getId(), TaskStatus.TIMEOUT);
 					}
 				});
 			}
@@ -132,18 +118,18 @@ class StaleJobChecker implements Runnable {
 	}
 	
 	private void checkInMemStaleJobs() {
-		sched.runningJobIdToInfos.keySet().forEach(jobId -> {
-			JobInfo jobInfo = sched.runningJobIdToInfos.get(jobId);
-			
+		stateManager.getRunningJobs().forEach(jobInfo -> {
+			int jobId = jobInfo.getJobId();
 			// check timeout jobs (RUNNING || CANCELLED)
-			boolean isTimeout = Time.now() - jobInfo.lastUpdatedTime > staleJobMaxThresholdMillis;
-			if(jobInfo.jobStatus != JobStatus.SUCCEEDED && jobInfo.jobStatus != JobStatus.FAILED && isTimeout) {
+			boolean isTimeout = Time.now() - jobInfo.getLastUpdatedTime() > staleJobMaxThresholdMillis;
+			if(jobInfo.getJobStatus() != JobStatus.SUCCEEDED 
+					&& jobInfo.getJobStatus() != JobStatus.FAILED && isTimeout) {
 				LOG.info("Stale in-mem job: jobInfo=" + jobInfo);
-				String queue = jobInfo.queue;
+				String queue = jobInfo.getQueue();
 				final JobStatus targetJobStatus;
 				try {
-					jobInfo.inMemJobUpdateLock.lock();
-					switch(jobInfo.jobStatus) {
+					jobInfo.lock();
+					switch(jobInfo.getJobStatus()) {
 						case RUNNING:
 							targetJobStatus = JobStatus.TIMEOUT;
 							break;
@@ -154,53 +140,47 @@ class StaleJobChecker implements Runnable {
 							targetJobStatus = JobStatus.FAILED;
 					}
 				} finally {
-					jobInfo.inMemJobUpdateLock.unlock();
+					jobInfo.unlock();
 				}
 				
-				LinkedList<TaskID> inMemTasks = sched.runningJobToTaskList.get(jobId);
-				if(inMemTasks != null) {
-					inMemTasks.forEach(id -> {
-						TaskInfo ti = sched.runningTaskIdToInfos.get(id);
-						if(ti != null && (ti.taskStatus == TaskStatus.RUNNING || targetJobStatus == JobStatus.CANCELLED)
-								&& sched.manager.getPlatformId().equals(ti.platformId)) {
-							sched.releaseResource(queue, ti.jobId, ti.taskId, ti.taskType);
-							sched.updateTaskInfo(ti.id, TaskStatus.TIMEOUT);
-							sched.incrementTimeoutTaskCount(queue);
-							// clear cancelled job from memory
-							if(targetJobStatus == JobStatus.CANCELLED) {
-								sched.getComponentManager().jobCancelled(jobId, () -> {
-									jobInfo.lastUpdatedTime = Time.now();
-									LOG.info("Cancelled job timeout: jobId=" + jobId + "jobInfo=" + jobInfo);
-								});
-							}
+				stateManager.getRunningTasks().forEach(ti -> {
+					if(ti != null && (ti.getTaskStatus() == TaskStatus.RUNNING || targetJobStatus == JobStatus.CANCELLED)
+							&& sched.componentManager.getPlatformId().equals(ti.getPlatformId())) {
+						sched.releaseResource(queue, ti);
+						stateManager.updateTaskStatus(ti.getJobId(), ti.getTaskId(), TaskStatus.TIMEOUT);
+						sched.incrementTimeoutTaskCount(queue);
+						// clear cancelled job from memory
+						if(targetJobStatus == JobStatus.CANCELLED) {
+							sched.getComponentManager().jobCancelled(ti.getJobId(), () -> {
+								jobInfo.setLastUpdatedTime(Time.now());;
+								LOG.info("Cancelled job timeout: jobId=" + jobId + "jobInfo=" + jobInfo);
+							});
 						}
-					});
-				}
-				sched.updateJobInfo(jobId, targetJobStatus);
+					}
+				});
+				stateManager.updateJobStatus(jobId, targetJobStatus);
 				
 				// handle in-memory completed job
-				sched.handleInMemoryCompletedTask(jobId);
-				sched.removeRedisJob(queue, jobId);
+				stateManager.handleInMemoryCompletedJob(jobId);
+				stateManager.removeQueuedJob(queue, jobId);
 				sched.updateJobStatCounter(queue, targetJobStatus);
 			}
 		});
 	}
 	
 	private void checkInRedisStaleJobs() {
-		sched.queueingManager.queueNames().forEach(queue -> {
-			Set<String> jobs = sched.getJobs(queue);
-			jobs.forEach(jstrJob -> {
-				JSONObject job = JSONObject.parseObject(jstrJob);
+		stateManager.queueNames().forEach(queue -> {
+			stateManager.retrieveQueuedJobs(queue).forEach(job -> {
 				int jobId = job.getIntValue(ScheduledConstants.JOB_ID);
 				String jStatus = job.getString(ScheduledConstants.JOB_STATUS);
 				JobStatus jobStatus = JobStatus.valueOf(jStatus);
 				long lastUpdateTs = job.getLongValue(ScheduledConstants.LAST_UPDATE_TS);
 				
-				JobInfo jobInfo = sched.runningJobIdToInfos.get(jobId);
+				JobInfo jobInfo = stateManager.getRunningJob(jobId).get();
 				if(jobInfo == null) {
 					// clear job with FAILED status from Redis queue
 					if(jobStatus == JobStatus.FAILED) {
-						sched.removeRedisJob(queue, jobId);
+						stateManager.removeQueuedJob(queue, jobId);
 						LOG.warn("Stale job in Redis purged: queue=" + queue + ", job=" + job);
 					}
 					
@@ -208,7 +188,7 @@ class StaleJobChecker implements Runnable {
 					long now = Time.now();
 					if((jobStatus == JobStatus.RUNNING || jobStatus == JobStatus.CANCELLING)
 							&& now - lastUpdateTs > staleJobMaxThresholdMillis) {
-						sched.removeRedisJob(queue, jobId);
+						stateManager.removeQueuedJob(queue, jobId);
 						LOG.warn("Stale job in Redis purged: queue=" + queue + ", job=" + job);
 					}
 				}
@@ -216,19 +196,4 @@ class StaleJobChecker implements Runnable {
 		});
 	}
 	
-	private void handleTimeoutInMemTask(JobInfo jobInfo, long now) {
-		int jobId = jobInfo.jobId;
-		jobInfo.lastUpdatedTime = now;
-		timeoutJobIdToInfos.putIfAbsent(jobId, jobInfo);
-		jobInfo.jobStatus = JobStatus.TIMEOUT;
-		if(timeoutJobIdToInfos.size() > 2 * keptTimeoutJobMaxCount) {
-			timeoutJobIdToInfos.values().stream()
-			.sorted((x, y) -> x.lastUpdatedTime - y.lastUpdatedTime < 0 ? -1 : 1)
-			.limit(keptTimeoutJobMaxCount)
-			.forEach(ji -> {
-				timeoutJobIdToInfos.remove(ji.jobId);
-			});
-		}
-	}
-
 }

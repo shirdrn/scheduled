@@ -35,27 +35,27 @@ import cn.shiyanjun.platform.scheduled.dao.entities.Job;
 public class RecoveryManagerImpl implements RecoveryManager {
 
 	private static final Log LOG = LogFactory.getLog(RecoveryManagerImpl.class);
-	private final ComponentManager manager;
+	private final ComponentManager componentManager;
 	private final JobPersistenceService jobPersistenceService;
 	private final QueueingManager queueingManager;
 	private final BlockingQueue<JSONObject> needRecoveredTaskQueue = Queues.newLinkedBlockingQueue();
 	private final Map<Integer, JSONObject> processedPendingRecoveryJobs = Maps.newHashMap();
 
-	public RecoveryManagerImpl(ComponentManager manager) {
+	public RecoveryManagerImpl(ComponentManager componentManager) {
 		super();
-		this.manager = manager;
-		jobPersistenceService = manager.getJobPersistenceService();
-		queueingManager = manager.getQueueingManager();
+		this.componentManager = componentManager;
+		jobPersistenceService = componentManager.getJobPersistenceService();
+		queueingManager = componentManager.getQueueingManager();
 	}
 
 	@Override
 	public void start() {
 		try {
-			manager.getHeartbeatMQAccessService().start();
+			componentManager.getHeartbeatMQAccessService().start();
 			
 			LOG.info("Start to read messages from MQ ...");
-			final Channel channel = manager.getHeartbeatMQAccessService().getChannel();
-			final String q = manager.getHeartbeatMQAccessService().getQueueName();
+			final Channel channel = componentManager.getHeartbeatMQAccessService().getChannel();
+			final String q = componentManager.getHeartbeatMQAccessService().getQueueName();
 			
 			while(true) {
 				GetResponse response = channel.basicGet(q, false);
@@ -95,7 +95,7 @@ public class RecoveryManagerImpl implements RecoveryManager {
 			LOG.error("Recovery failure:", e);
 			Throwables.propagate(e);
 		} finally {
-			manager.getHeartbeatMQAccessService().stop();
+			componentManager.getHeartbeatMQAccessService().stop();
 		}
 	}
 	

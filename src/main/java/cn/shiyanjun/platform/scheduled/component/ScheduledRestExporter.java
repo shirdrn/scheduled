@@ -20,20 +20,20 @@ import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 
 public class ScheduledRestExporter implements RestExporter {
 
-	private final ComponentManager manager;
+	private final ComponentManager componentManager;
 	
-	public ScheduledRestExporter(ComponentManager manager) {
+	public ScheduledRestExporter(ComponentManager componentManager) {
 		super();
-		this.manager = manager;
+		this.componentManager = componentManager;
 	}
 	
 	@Override
 	public Set<String> queueingNames() {
-		return manager.getQueueingManager().queueNames();
+		return componentManager.getQueueingManager().queueNames();
 	}
 	
 	private JobQueueingService getQueueingService(String queue) {
-		QueueingContext qc = manager.getQueueingManager().getQueueingContext(queue);
+		QueueingContext qc = componentManager.getQueueingManager().getQueueingContext(queue);
 		JobQueueingService queueingService = qc.getJobQueueingService();
 		return queueingService;
 	}
@@ -75,7 +75,7 @@ public class ScheduledRestExporter implements RestExporter {
 	@Override
 	public Map<String, JSONObject> getQueueStatuses() {
 		Map<String, JSONObject> statuses = Maps.newHashMap();
-		Set<String> queues = manager.getQueueingManager().queueNames();
+		Set<String> queues = componentManager.getQueueingManager().queueNames();
 		queues.forEach(queue -> {
 			Map<Integer, JSONObject> jobs = getQueuedJobStatuses(queue);
 			JSONObject status = new JSONObject();
@@ -88,7 +88,7 @@ public class ScheduledRestExporter implements RestExporter {
 	@Override
 	public boolean cancelJob(int jobId) {
 		try {
-			return manager.cancelJob(jobId);
+			return componentManager.cancelJob(jobId);
 		} catch (Exception e) {
 			return false;
 		}
@@ -96,27 +96,27 @@ public class ScheduledRestExporter implements RestExporter {
 
 	@Override
 	public void updateResourceAmount(String queue, TaskType taskType, int amount) {
-		manager.getResourceManager().updateResourceAmount(queue, taskType, amount);		
+		componentManager.getResourceManager().updateResourceAmount(queue, taskType, amount);		
 	}
 
 	@Override
 	public void setSchedulingOpened(boolean isSchedulingOpened) {
-		manager.setSchedulingOpened(isSchedulingOpened);;
+		componentManager.setSchedulingOpened(isSchedulingOpened);;
 	}
 
 	@Override
 	public boolean isSchedulingOpened() {
-		return manager.isSchedulingOpened();
+		return componentManager.isSchedulingOpened();
 	}
 
 	@Override
 	public Pair<String, String> queryMaintenanceTimeSegment() {
-		return manager.getJobFetcher().getMaintenanceTimeSegment();
+		return componentManager.getJobFetcher().getMaintenanceTimeSegment();
 	}
 
 	@Override
 	public void updateMaintenanceTimeSegment(String startTime, String endTime) {
-		manager.getJobFetcher().updateMaintenanceTimeSegment(startTime, endTime);		
+		componentManager.getJobFetcher().updateMaintenanceTimeSegment(startTime, endTime);		
 	}
 
 }
