@@ -1,6 +1,7 @@
 package cn.shiyanjun.platform.scheduled.common;
 
 import java.util.Map;
+import java.util.Optional;
 
 import com.google.common.collect.Maps;
 
@@ -21,8 +22,8 @@ public abstract class AbstractProtocolManager<P> extends AbstractComponent imple
 	}
 	
 	@Override
-	public P select(Enum<?> protocolType) {
-		return protocols.get(protocolType);
+	public Optional<P> select(Enum<?> protocolType) {
+		return Optional.ofNullable(protocols.get(protocolType));
 	}
 
 }

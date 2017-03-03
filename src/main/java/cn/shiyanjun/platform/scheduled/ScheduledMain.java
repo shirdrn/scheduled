@@ -52,6 +52,7 @@ import cn.shiyanjun.platform.scheduled.rest.QueueingServlet;
 import cn.shiyanjun.platform.scheduled.rest.ResourceServlet;
 import cn.shiyanjun.platform.scheduled.rest.SchedulingServlet;
 import cn.shiyanjun.platform.scheduled.utils.ConfigUtils;
+import cn.shiyanjun.platform.scheduled.utils.HookUtils;
 import cn.shiyanjun.platform.scheduled.utils.ResourceUtils;
 import redis.clients.jedis.JedisPool;
 
@@ -124,6 +125,9 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 			jobFetcher.start();
 			schedulingManager.start();
 			queueingManager.start();
+			
+			// add shutdown hook for releasing port resource
+			HookUtils.addShutdownHook(() -> restServer.stop());
 			restServer.start();
 		} catch (Exception e) {
 			LOG.error(e);

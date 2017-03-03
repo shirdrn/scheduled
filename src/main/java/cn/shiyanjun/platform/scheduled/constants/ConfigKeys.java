@@ -19,7 +19,5 @@ public interface ConfigKeys {
 	String SCHEDULED_MAX_RECYCLE_RESOURCE_CACHE_CAPACITY = "scheduled.max.recycle.resource.cache.capacity";
 	
 	String SERVICE_JOB_ORCHESTRATE_PROTOCOL = "service.job.orchestrate.protocol";
-	String SERVICE_JOB_ORCHESTRATE_URL = "service.job.orchestrate.url";
-	
 	String SERVICE_JOB_FETCH_PROTOCOL = "service.job.fetch.protocol";
 }

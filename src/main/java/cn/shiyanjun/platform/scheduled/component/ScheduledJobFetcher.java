@@ -1,6 +1,7 @@
 package cn.shiyanjun.platform.scheduled.component;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -10,6 +11,7 @@ import org.apache.commons.logging.LogFactory;
 
 import com.alibaba.fastjson.JSONObject;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
 
 import cn.shiyanjun.platform.api.Context;
 import cn.shiyanjun.platform.api.constants.JobStatus;
@@ -20,11 +22,11 @@ import cn.shiyanjun.platform.scheduled.api.ComponentManager;
 import cn.shiyanjun.platform.scheduled.api.JobFetcher;
 import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
 import cn.shiyanjun.platform.scheduled.api.Protocol;
+import cn.shiyanjun.platform.scheduled.common.RESTRequest;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 import cn.shiyanjun.platform.scheduled.dao.entities.Job;
 import cn.shiyanjun.platform.scheduled.protocols.JobFetchProtocolManager;
 import cn.shiyanjun.platform.scheduled.protocols.JobOrchestrationProtocolManager;
-import cn.shiyanjun.platform.scheduled.protocols.JobOrchestrationProtocolManager.RESTRequest;
 
 /**
  * For a given <code>fetchJobInterval</code>, this component is able to periodically
@@ -139,14 +141,18 @@ public class ScheduledJobFetcher implements JobFetcher {
 		private void fetch() throws Exception {
 			// select submitted jobs from database
 			JobStatus fromStatus = JobStatus.SUBMITTED;
-			List<Job> submittedJobs = jobFetchProtocolManager.select(jobFetchProtocol).request(fromStatus);
+			Optional<Protocol<JobStatus, List<Job>>> protocol = jobFetchProtocolManager.select(jobFetchProtocol);
+			List<Job> submittedJobs =	Lists.newArrayList();
+			if(protocol.isPresent()) {
+				submittedJobs = protocol.get().request(fromStatus);
+			}
 			LOG.debug("Fetched jobs: " + submittedJobs);
 			if(submittedJobs.size() > 0) {
 				LOG.info("Fetch jobs: count=" + submittedJobs.size());
 			}
 			
 			submittedJobs.forEach(job -> {
-				Integer jobId = null;
+				final Integer jobId;
 				try{
 					jobId = job.getId();
 					if(componentManager.shouldCancelJob(jobId)) {
@@ -163,13 +169,14 @@ public class ScheduledJobFetcher implements JobFetcher {
 						
 						int jobType = job.getJobType();
 						String jsonParams = job.getParams();
-						Protocol<RESTRequest, JSONObject> p = jobOrchestrationProtocolManager.select(jobOrchestrationProtocol);
-						JSONObject jobData = p.request(new RESTRequest(jsonParams, jobId, jobType));
-						
-						if(!jobData.isEmpty()) {
-							// prepare to execute queueing
-							componentManager.getQueueingManager().collect(jobData);
-						}
+						jobOrchestrationProtocolManager.select(jobOrchestrationProtocol).ifPresent(m -> {
+							Protocol<RESTRequest, JSONObject> p = m.get(jobType);
+							JSONObject jobData = p.request(new RESTRequest(jsonParams, jobId, jobType));
+							if(!jobData.isEmpty()) {
+								// prepare to execute queueing
+								componentManager.getQueueingManager().collect(jobData);
+							}
+						});
 					}
 				} catch(Exception e) {
 					LOG.error("Fail to build: jobId=" + job.getId() + ", params=" + job.getParams(), e);
