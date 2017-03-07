@@ -29,6 +29,7 @@ public class ResourceManagerImpl implements ResourceManager {
 	
 	private static final Log LOG = LogFactory.getLog(ResourceManagerImpl.class);
 	private final Map<String, Map<TaskType, Integer>> maxConcurrencies = Maps.newHashMap();
+	private final Map<String, Integer> queueCapacities = Maps.newHashMap();
 	private volatile Map<String, Map<TaskType, AtomicInteger>> counters = Maps.newHashMap();
 	private final Map<String, Set<TaskType>> taskTypes = Maps.newHashMap();
 	
@@ -285,6 +286,16 @@ public class ResourceManagerImpl implements ResourceManager {
 				}
 			}
 		}
+	}
+
+	@Override
+	public void registerQueueCapacity(String queue, int capacity) {
+		queueCapacities.put(queue, capacity);		
+	}
+
+	@Override
+	public Map<String, Integer> queueCapacities() {
+		return Collections.unmodifiableMap(queueCapacities);
 	}
 
 }

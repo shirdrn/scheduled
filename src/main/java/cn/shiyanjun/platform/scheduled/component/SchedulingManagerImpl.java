@@ -2,7 +2,9 @@ package cn.shiyanjun.platform.scheduled.component;
 
 import java.io.IOException;
 import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Random;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -129,7 +131,8 @@ public class SchedulingManagerImpl implements SchedulingManager {
 			while(running) {
 				try {
 					// for each job in Redis queue
-					stateManager.queueNames().forEach(queue -> {
+					Optional<String> selectedQueue = selectQueue();
+					selectedQueue.ifPresent(queue -> {
 						resourceManager.taskTypes(queue).forEach(taskType -> {
 							LOG.debug("Loop for: queue=" + queue + ", taskType=" + taskType);
 							Optional<TaskOrder> offeredTask = schedulingPolicy.offerTask(queue, taskType);
@@ -163,6 +166,18 @@ public class SchedulingManagerImpl implements SchedulingManager {
 					LOG.warn("Fail to schedule task: ", e);
 				}
 			}
+		}
+		
+		private Optional<String> selectQueue() {
+			Map<String, Integer> capacities = resourceManager.queueCapacities();
+			String[] keys = new String[capacities.size()];
+			Integer[] values = new Integer[capacities.size()];
+			capacities.values().toArray(values);
+			
+			// select a queue randomly
+			Random rand = new Random();
+			int selectedIndex = rand.nextInt(values.length);
+			return Optional.of(keys[selectedIndex]);
 		}
 		
 		private void scheduleTask(String queue, TaskType taskType, TaskOrder scheduledTask, JobInfo jobInfo) {

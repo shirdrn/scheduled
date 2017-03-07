@@ -151,17 +151,19 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 			String queue = iter.next().toString();
 			String value = ctx.get(queue);
 			
-			// job:1,2,3|1:1,2:1
+			// job:1,2,3|1:1,2:1|80
 			if(!Strings.isNullOrEmpty(value)) {
 				String[] values = value.split("\\|");
 				String jobConfig = values[0].split(":")[1];
 				String taskConfig = values[1];
+				String capacity = values[3];
 				int[] jobTypes = ConfigUtils.stringsToInts(jobConfig.split(","));
 				queueingManager.registerQueue(queue, jobTypes);
 				List<Pair<TaskType, Integer>> taskTypes = ConfigUtils.parsePairStrings(taskConfig).stream()
 						.map(p -> new Pair<TaskType, Integer>(TaskType.fromCode(p.getKey()).get(), p.getValue()))
 						.collect(Collectors.toList());
 				resourceManager.registerResource(queue, taskTypes);
+				resourceManager.registerQueueCapacity(queue, Integer.parseInt(capacity));
 			}
 		}
 	}

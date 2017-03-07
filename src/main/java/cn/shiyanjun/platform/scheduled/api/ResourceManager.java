@@ -26,4 +26,7 @@ public interface ResourceManager {
 	void currentResourceStatuses();
 	
 	void updateResourceAmount(String queue, TaskType taskType, int amount);
+	
+	void registerQueueCapacity(String queue, int capacity);
+	Map<String, Integer> queueCapacities();
 }
