@@ -2,6 +2,7 @@ package cn.shiyanjun.platform.scheduled.component;
 
 import java.io.IOException;
 import java.util.Collection;
+import java.util.LinkedList;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
@@ -10,12 +11,16 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import com.google.common.collect.Queues;
 import com.rabbitmq.client.AMQP.BasicProperties;
 import com.rabbitmq.client.Channel;
@@ -26,6 +31,7 @@ import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.constants.TaskStatus;
 import cn.shiyanjun.platform.api.constants.TaskType;
 import cn.shiyanjun.platform.api.utils.NamedThreadFactory;
+import cn.shiyanjun.platform.api.utils.Pair;
 import cn.shiyanjun.platform.api.utils.Time;
 import cn.shiyanjun.platform.scheduled.api.ComponentManager;
 import cn.shiyanjun.platform.scheduled.api.HeartbeatHandlingController;
@@ -117,6 +123,15 @@ public class SchedulingManagerImpl implements SchedulingManager {
 		running = false;
 	}
 	
+	interface QueueSelector {
+		Optional<String> selectQueue();
+	}
+	
+	enum SelectorType {
+		RAMDOM,
+		CAPACITY
+	}
+	
 	/**
 	 * Schedules a prepared task, and publish it to the MQ
 	 * 
@@ -124,14 +139,34 @@ public class SchedulingManagerImpl implements SchedulingManager {
 	 */
 	private class SchedulingThread extends Thread {
 		
+		private final QueueSelector queueSelector;
+		private final Map<SelectorType, QueueSelector> selectors = Maps.newHashMap();
 		private final int scheduleTaskIntervalMillis = 5000;
+		
+		{
+			selectors.put(SelectorType.RAMDOM, new RandomQueueSelector());
+			selectors.put(SelectorType.CAPACITY, new CapacityQueueSelector());
+		}
+		
+		public SchedulingThread() {
+			super();
+			String type = componentManager.getContext().get(ConfigKeys.SCHEDULED_QUEUEING_SELECTOR_NAME, SelectorType.RAMDOM.name());
+			SelectorType selectorType = SelectorType.RAMDOM;
+			try {
+				selectorType = SelectorType.valueOf(type);
+			} catch (Exception e) {}
+			queueSelector = selectors.get(selectorType);
+			Preconditions.checkArgument(queueSelector != null, "queueSelector==null");
+		}
+		
+		
 		
 		@Override
 		public void run() {
 			while(running) {
 				try {
 					// for each job in Redis queue
-					Optional<String> selectedQueue = selectQueue();
+					Optional<String> selectedQueue = queueSelector.selectQueue();
 					selectedQueue.ifPresent(queue -> {
 						resourceManager.taskTypes(queue).forEach(taskType -> {
 							LOG.debug("Loop for: queue=" + queue + ", taskType=" + taskType);
@@ -166,18 +201,6 @@ public class SchedulingManagerImpl implements SchedulingManager {
 					LOG.warn("Fail to schedule task: ", e);
 				}
 			}
-		}
-		
-		private Optional<String> selectQueue() {
-			Map<String, Integer> capacities = resourceManager.queueCapacities();
-			String[] keys = new String[capacities.size()];
-			Integer[] values = new Integer[capacities.size()];
-			capacities.values().toArray(values);
-			
-			// select a queue randomly
-			Random rand = new Random();
-			int selectedIndex = rand.nextInt(values.length);
-			return Optional.of(keys[selectedIndex]);
 		}
 		
 		private void scheduleTask(String queue, TaskType taskType, TaskOrder scheduledTask, JobInfo jobInfo) {
@@ -218,6 +241,63 @@ public class SchedulingManagerImpl implements SchedulingManager {
 				
 				// handle in-memory completed task
 				stateManager.handleInMemoryCompletedJob(id);
+			}
+		}
+		
+		public final class RandomQueueSelector implements QueueSelector {
+			
+			private final Random rand = new Random();
+			private Map<String, Integer> capacities = resourceManager.queueCapacities();
+			private String[] keys = new String[capacities.size()];
+			
+			public RandomQueueSelector() {
+				super();
+			}
+			
+			@Override
+			public Optional<String> selectQueue() {
+				// select a queue randomly
+				int selectedIndex = rand.nextInt(capacities.size());
+				return Optional.of(keys[selectedIndex]);
+			}
+		}
+		
+		public final class CapacityQueueSelector implements QueueSelector {
+			
+			private final Random rand = new Random();
+			private final Map<String, Integer> capacities = resourceManager.queueCapacities();
+			
+			public CapacityQueueSelector() {
+				super();
+			}
+			
+			@Override
+			public Optional<String> selectQueue() {
+				final LinkedList<Holder> percentageAxis = Lists.newLinkedList();
+				final AtomicInteger current = new AtomicInteger(0);
+				capacities.keySet().forEach(queue -> {
+					int start = current.get();
+					int end = start + capacities.get(queue);
+					percentageAxis.add(new Holder(queue, new Pair<>(start, end)));
+					current.set(end);
+				});
+				
+				final int selected = rand.nextInt(current.get());
+				return percentageAxis.stream()
+					.filter(h -> selected >= h.range.getKey() && selected < h.range.getValue())
+					.map(h -> h.queue)
+					.findFirst();
+			}
+			
+			class Holder {
+				final Pair<Integer, Integer> range;
+				final String queue;
+				
+				public Holder(String queue, Pair<Integer, Integer> range) {
+					super();
+					this.queue = queue;
+					this.range = range;
+				}
 			}
 		}
 		
