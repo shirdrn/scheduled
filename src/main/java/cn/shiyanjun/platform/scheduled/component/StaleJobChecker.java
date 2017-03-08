@@ -1,5 +1,6 @@
 package cn.shiyanjun.platform.scheduled.component;
 
+import java.sql.Timestamp;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -77,9 +78,19 @@ class StaleJobChecker implements Runnable {
 			long now = Time.now();
 			// check whether a job is timeout
 			if(now - job.getDoneTime().getTime() > staleJobMaxThresholdMillis) {
-				LOG.info("Stale in-db job: jobId=" + jobId);
+				stateManager.updateJobStatus(job.getId(), JobStatus.TIMEOUT);
+				LOG.info("Stale in-db job: jobId=" + jobId + 
+						", lastUpdatedTs=" + job.getDoneTime() 
+						+ ", current=" + new Timestamp(now));
 				List<Task> tasks = stateManager.retrieveTasks(jobId);
 				stateManager.getRunningJob(jobId).ifPresent(jobInfo -> {
+					try {
+						// in memory job timeout, fail it fast
+						jobInfo.lock();
+						jobInfo.setJobStatus(JobStatus.TIMEOUT);
+					} finally {
+						jobInfo.unlock();
+					}
 					String queue = jobInfo.getQueue();
 					tasks.forEach(task -> {
 						if(task.getStatus() == TaskStatus.RUNNING.getCode()) {
@@ -94,25 +105,10 @@ class StaleJobChecker implements Runnable {
 							});
 						}
 					});
-					try {
-						jobInfo.lock();
-						jobInfo.setJobStatus(JobStatus.TIMEOUT);
-					} finally {
-						jobInfo.unlock();
-					}
+					
 					stateManager.handleInMemoryCompletedJob(jobId);
 					stateManager.removeQueuedJob(queue, jobId);
 					stateManager.handleInMemoryTimeoutJob(jobInfo, keptTimeoutJobMaxCount);
-				});
-				stateManager.updateJobStatus(job.getId(), JobStatus.TIMEOUT);
-				
-				// check running tasks
-				tasks.stream().forEach(task -> {
-					// task with RUNNING status
-					TaskStatus taskStatus = TaskStatus.valueOf(task.getStatus()).get();
-					if(taskStatus == TaskStatus.RUNNING) {
-						stateManager.updateTaskStatus(task.getId(), TaskStatus.TIMEOUT);
-					}
 				});
 			}
 		});

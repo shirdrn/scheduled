@@ -132,7 +132,6 @@ public class StateManagerImpl extends AbstractComponent implements StateManager 
 	public void handleInMemoryTimeoutJob(JobInfo jobInfo, int keptTimeoutJobMaxCount) {
 		jobInfo.setLastUpdatedTime(Time.now());
 		timeoutJobIdToInfos.putIfAbsent(jobInfo.getJobId(), jobInfo);
-		jobInfo.setJobStatus(JobStatus.TIMEOUT);;
 		if(timeoutJobIdToInfos.size() > 2 * keptTimeoutJobMaxCount) {
 			timeoutJobIdToInfos.values().stream()
 			.sorted((x, y) -> x.getLastUpdatedTime() - y.getLastUpdatedTime() < 0 ? -1 : 1)
