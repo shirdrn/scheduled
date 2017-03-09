@@ -5,11 +5,9 @@ import redis.clients.jedis.JedisPool;
 
 public interface ComponentManager extends ScheduledController {
 
-	String getPlatformId();
 	Context getContext();
+	String getPlatformId();
 	
-	JobPersistenceService getJobPersistenceService();
-	TaskPersistenceService getTaskPersistenceService();
 	MQAccessService getTaskMQAccessService();
 	MQAccessService getHeartbeatMQAccessService();
 

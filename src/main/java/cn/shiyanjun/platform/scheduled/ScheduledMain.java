@@ -32,6 +32,7 @@ import cn.shiyanjun.platform.scheduled.api.RestExporter;
 import cn.shiyanjun.platform.scheduled.api.RestServer;
 import cn.shiyanjun.platform.scheduled.api.SchedulingManager;
 import cn.shiyanjun.platform.scheduled.api.StateManager;
+import cn.shiyanjun.platform.scheduled.api.StorageService;
 import cn.shiyanjun.platform.scheduled.api.TaskPersistenceService;
 import cn.shiyanjun.platform.scheduled.component.JobPersistenceServiceImpl;
 import cn.shiyanjun.platform.scheduled.component.QueueingManagerImpl;
@@ -56,7 +57,7 @@ import cn.shiyanjun.platform.scheduled.utils.HookUtils;
 import cn.shiyanjun.platform.scheduled.utils.ResourceUtils;
 import redis.clients.jedis.JedisPool;
 
-public final class ScheduledMain extends AbstractComponent implements LifecycleAware, ComponentManager {
+public final class ScheduledMain extends AbstractComponent implements LifecycleAware, ComponentManager, StorageService {
 
 	private static final Log LOG = LogFactory.getLog(ScheduledMain.class);
 	private final String queueingConfig = "queueings.properties";
@@ -107,9 +108,11 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 			taskMQAccessService = new RabbitMQAccessService(taskQName, connectionFactory);
 			heartbeatMQAccessService = new RabbitMQAccessService(hbQName, connectionFactory);
 			
+			stateManager = new StateManagerImpl(this);
 			resourceManager = new ResourceManagerImpl(context);
 			queueingManager = new QueueingManagerImpl(this);
-			stateManager = new StateManagerImpl(this);
+			stateManager.setQueueingManager(queueingManager);
+			
 			jobFetcher = new ScheduledJobFetcher(this);
 			schedulingManager = new SchedulingManagerImpl(this);
 			recoveryManager = new RecoveryManagerImpl(this);

@@ -85,7 +85,7 @@ public class SchedulingManagerImpl implements SchedulingManager {
 		this.componentManager = componentManager;
 		taskMQAccessService = this.componentManager.getTaskMQAccessService();
 		heartbeatMQAccessService = this.componentManager.getHeartbeatMQAccessService();
-		resourceManager = componentManager.getResourceManager();
+		resourceManager = this.componentManager.getResourceManager();
 		freshTasksResponseProcessingManager = new FreshTasksResponseProcessingManager();
 		staleJobChecker = new StaleJobChecker(this);
 	}

@@ -9,7 +9,7 @@ import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.utils.Time;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 
-public class JobInfo {
+public final class JobInfo {
 
 	final int jobId;
 	final String queue;

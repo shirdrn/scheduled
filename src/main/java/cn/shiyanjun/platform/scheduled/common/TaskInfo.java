@@ -6,7 +6,7 @@ import cn.shiyanjun.platform.api.constants.TaskStatus;
 import cn.shiyanjun.platform.api.utils.Time;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 
-public class TaskInfo extends TaskID {
+public final class TaskInfo extends TaskID {
 
 	long scheduledTime;
 	volatile long lastUpdatedTime;

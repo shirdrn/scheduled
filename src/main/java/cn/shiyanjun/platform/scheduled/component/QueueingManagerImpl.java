@@ -1,6 +1,5 @@
 package cn.shiyanjun.platform.scheduled.component;
 
-import java.sql.Timestamp;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -22,38 +21,34 @@ import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.constants.TaskStatus;
 import cn.shiyanjun.platform.api.utils.Time;
 import cn.shiyanjun.platform.scheduled.api.ComponentManager;
-import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
 import cn.shiyanjun.platform.scheduled.api.JobQueueingService;
 import cn.shiyanjun.platform.scheduled.api.QueueingManager;
-import cn.shiyanjun.platform.scheduled.api.TaskPersistenceService;
+import cn.shiyanjun.platform.scheduled.api.StateManager;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
-import cn.shiyanjun.platform.scheduled.dao.entities.Job;
 import cn.shiyanjun.platform.scheduled.dao.entities.Task;
 
 public class QueueingManagerImpl extends AbstractComponent implements QueueingManager {
 
 	private static final Log LOG = LogFactory.getLog(QueueingManagerImpl.class);
-	private final ComponentManager manager;
+	private final ComponentManager componentManager;
 	private final BlockingQueue<JSONObject> queueingQueue = Queues.newLinkedBlockingQueue();
 	private volatile boolean running = true;
 	private final Thread queueingWorker;
 	private final Map<String, QueueingContext> queueingContexts = Maps.newHashMap();
 	private final Map<Integer, String> jobTypeToQueueNames = Maps.newHashMap();
-	private final JobPersistenceService jobPersistenceService;
-	private final TaskPersistenceService taskPersistenceService;
+	private StateManager stateManager;
 	private final Set<String> queueNameSet = Sets.newHashSet();
 	
-    public QueueingManagerImpl(ComponentManager cm) {
-		super(cm.getContext());
-		this.manager = cm;
+    public QueueingManagerImpl(ComponentManager componentManager) {
+		super(componentManager.getContext());
+		this.componentManager = componentManager;
 		queueingWorker = new QueueingWorker();
-		queueingWorker.setName("QUEUEING-WORKER");
-		jobPersistenceService = manager.getJobPersistenceService();
-		taskPersistenceService = manager.getTaskPersistenceService();
+		queueingWorker.setName("QUEUEING");
 	}
     
     @Override
 	public void start() {
+    	stateManager = componentManager.getStateManager();
     	queueingWorker.start();		
 	}
 
@@ -73,7 +68,7 @@ public class QueueingManagerImpl extends AbstractComponent implements QueueingMa
 	public void registerQueue(String queueName, int... types) {
 		if(!queueNameSet.contains(queueName)) {
 			final JobQueueingService jobQueueingService = 
-					new RedisJobQueueingService(context, queueName, manager.getJedisPool());
+					new RedisJobQueueingService(context, queueName, componentManager.getJedisPool());
 			QueueingContext queueingContext = new QueueingContext(queueName);
 			queueingContext.jobQueueingService = jobQueueingService;
 			for(int type : types) {
@@ -120,7 +115,7 @@ public class QueueingManagerImpl extends AbstractComponent implements QueueingMa
 				JSONObject job = null;
 				try {
 					// control to take a job from the queue
-					if(manager.isSchedulingOpened()) {
+					if(componentManager.isSchedulingOpened()) {
 						job = queueingQueue.take();
 						if(job != null) {
 							int jobId = job.getIntValue(ScheduledConstants.JOB_ID);
@@ -128,23 +123,19 @@ public class QueueingManagerImpl extends AbstractComponent implements QueueingMa
 							
 							List<JSONObject> jsonTasks = extractTasks(job);
 							
-							List<Task> userTasks = Lists.newArrayList();
-							jsonTasks.forEach(jTask -> createAndCollectTask(jobId, userTasks, jTask));
+							List<Task> tasks = Lists.newArrayList();
+							jsonTasks.forEach(jTask -> createAndCollectTask(jobId, tasks, jTask));
 							
 							try {
 								// insert task informations into database, with initial status: CREATED
-								taskPersistenceService.insertTasks(userTasks);
+								stateManager.insertTasks(tasks);
 								
 								// add tasks of a job to waiting queue
-								doQueueing(jobId, jobType, userTasks);
+								doQueueing(jobId, jobType, tasks);
 							} catch (Exception e) {
 								LOG.warn("Failed to save or queueing job: " + job, e);
 								// update job status to FAILED
-								Job myJob = new Job();
-								myJob.setId(jobId);
-								myJob.setStatus(JobStatus.FAILED.getCode());
-								myJob.setDoneTime(new Timestamp(Time.now()));
-								jobPersistenceService.updateJobByID(myJob);
+								stateManager.updateJobStatus(jobId, JobStatus.FAILED, Time.now());
 							}
 						}
 					} else {
@@ -210,17 +201,10 @@ public class QueueingManagerImpl extends AbstractComponent implements QueueingMa
 
 		private void updateJobAndTasks(int jobId, List<Task> tasks) {
 			// update job status to QUEUEING
-			Job job = new Job();
-			job.setId(jobId);
-			job.setStatus(JobStatus.QUEUEING.getCode());
-			job.setDoneTime(new Timestamp(Time.now()));
-			jobPersistenceService.updateJobByID(job);
+			stateManager.updateJobStatus(jobId, JobStatus.QUEUEING, Time.now());
 
 			// update all task  status to QUEUEING for job
-			tasks.forEach(task -> {
-				task.setStatus(TaskStatus.QUEUEING.getCode());
-				taskPersistenceService.updateTaskByID(task);
-			});
+			tasks.forEach(task -> stateManager.updateTaskStatus(task.getId(), TaskStatus.QUEUEING));
 		}
 	}
 	

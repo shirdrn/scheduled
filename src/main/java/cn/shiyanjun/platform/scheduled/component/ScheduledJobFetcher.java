@@ -20,8 +20,8 @@ import cn.shiyanjun.platform.api.utils.Pair;
 import cn.shiyanjun.platform.api.utils.Time;
 import cn.shiyanjun.platform.scheduled.api.ComponentManager;
 import cn.shiyanjun.platform.scheduled.api.JobFetcher;
-import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
 import cn.shiyanjun.platform.scheduled.api.Protocol;
+import cn.shiyanjun.platform.scheduled.api.StateManager;
 import cn.shiyanjun.platform.scheduled.common.RESTRequest;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 import cn.shiyanjun.platform.scheduled.dao.entities.Job;
@@ -39,29 +39,32 @@ public class ScheduledJobFetcher implements JobFetcher {
 	private static final Log LOG = LogFactory.getLog(ScheduledJobFetcher.class);
 	private static final int INITIAL_DELAY_TIME = 5000;
 	private final ComponentManager componentManager;
+	private final Context context;
 	private ScheduledExecutorService fetchJobPool;
+	private StateManager stateManager;
 	private final int fetchJobInterval;
-	private final JobPersistenceService jobPersistenceService;
-	private final JobFetchProtocolManager jobFetchProtocolManager;
-	private final JobOrchestrationProtocolManager jobOrchestrationProtocolManager;
-	private final Enum<?> jobOrchestrationProtocol;
-	private final Enum<?> jobFetchProtocol;
+	private JobFetchProtocolManager jobFetchProtocolManager;
+	private JobOrchestrationProtocolManager jobOrchestrationProtocolManager;
+	private Enum<?> jobOrchestrationProtocol;
+	private Enum<?> jobFetchProtocol;
 	private volatile String maintenanceSegmentStartTime;
 	private volatile String maintenanceSegmentEndTime;
 	
 	public ScheduledJobFetcher(ComponentManager componentManager) {
 		super();
 		this.componentManager = componentManager;
-		Context context = componentManager.getContext();
+		context = componentManager.getContext();
 		fetchJobInterval = context.getInt(ConfigKeys.SCHEDULED_FETCH_JOB_INTERVAL_MILLIS, 3000);
 		LOG.info("Configs: fetchJobInterval=" + fetchJobInterval + ", initialDelay=" + INITIAL_DELAY_TIME);
 		
 		maintenanceSegmentStartTime = context.get(ConfigKeys.SCHEDULED_MAINTENANCE_TIME_SEGMENT_START, "03:00:00");
 		maintenanceSegmentEndTime = context.get(ConfigKeys.SCHEDULED_MAINTENANCE_TIME_SEGMENT_END, "03:30:00");
 		LOG.info("Configs: maintenanceSegmentStartTime=" + maintenanceSegmentStartTime + ", maintenanceSegmentEndTime=" + maintenanceSegmentEndTime);
-		
-		jobPersistenceService = componentManager.getJobPersistenceService();
-		
+	}
+
+	@Override
+	public void start() {
+		stateManager = componentManager.getStateManager();
 		jobOrchestrationProtocolManager = new JobOrchestrationProtocolManager(context);
 		jobOrchestrationProtocolManager.initialize();
 		String jobOrchestrationStringProtocol = context.get(ConfigKeys.SERVICE_JOB_ORCHESTRATE_PROTOCOL);
@@ -69,16 +72,13 @@ public class ScheduledJobFetcher implements JobFetcher {
 		jobOrchestrationProtocol = jobOrchestrationProtocolManager.ofType(jobOrchestrationStringProtocol);
 		LOG.info("Protocol: jobOrchestrationProtocol=" + jobOrchestrationProtocol);
 		
-		jobFetchProtocolManager = new JobFetchProtocolManager(componentManager, context);
+		jobFetchProtocolManager = new JobFetchProtocolManager(stateManager, context);
 		jobFetchProtocolManager.initialize();
 		String jobFetchStringProtocol = context.get(ConfigKeys.SERVICE_JOB_FETCH_PROTOCOL);
 		Preconditions.checkArgument(jobFetchStringProtocol != null);
 		jobFetchProtocol = jobFetchProtocolManager.ofType(jobFetchStringProtocol);
 		LOG.info("Protocol: jobFetchProtocol=" + jobFetchProtocol);
-	}
-
-	@Override
-	public void start() {
+		
 		fetchJobPool = Executors.newSingleThreadScheduledExecutor(new NamedThreadFactory("JOB-FETCHER"));
 		fetchJobPool.scheduleAtFixedRate(
 				new FetchJobThread(), INITIAL_DELAY_TIME, fetchJobInterval, TimeUnit.MILLISECONDS);
@@ -157,13 +157,11 @@ public class ScheduledJobFetcher implements JobFetcher {
 					jobId = job.getId();
 					if(componentManager.shouldCancelJob(jobId)) {
 						componentManager.jobCancelled(jobId, () -> {
-							job.setStatus(JobStatus.CANCELLED.getCode()); 
-							jobPersistenceService.updateJobByID(job);
+							stateManager.updateJobStatus(jobId, JobStatus.CANCELLED);
 						});
 					} else {
 						JobStatus toStatus = JobStatus.FETCHED;
-						job.setStatus(toStatus.getCode()); 
-						jobPersistenceService.updateJobByID(job);
+						stateManager.updateJobStatus(jobId, toStatus);
 						LOG.info("Job fetched: jobId=" + jobId + ", fromStatus=" + fromStatus + ", toStatus=" + toStatus);
 						LOG.info("Job info: id=" + jobId + ", params=" + job.getParams());
 						

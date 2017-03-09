@@ -22,10 +22,10 @@ import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.constants.TaskStatus;
 import cn.shiyanjun.platform.api.constants.TaskType;
 import cn.shiyanjun.platform.api.utils.Time;
-import cn.shiyanjun.platform.scheduled.api.ComponentManager;
 import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
 import cn.shiyanjun.platform.scheduled.api.QueueingManager;
 import cn.shiyanjun.platform.scheduled.api.StateManager;
+import cn.shiyanjun.platform.scheduled.api.StorageService;
 import cn.shiyanjun.platform.scheduled.api.TaskPersistenceService;
 import cn.shiyanjun.platform.scheduled.common.JobInfo;
 import cn.shiyanjun.platform.scheduled.common.TaskID;
@@ -41,8 +41,8 @@ public class StateManagerImpl extends AbstractComponent implements StateManager 
 	private static final Log LOG = LogFactory.getLog(StateManagerImpl.class);
 	private final JobPersistenceService jobPersistenceService;
 	private final TaskPersistenceService taskPersistenceService;
-	private final QueueingManager queueingManager;
-	private final ComponentManager manager;
+	private QueueingManager queueingManager;
+	private final StorageService componentManager;
 	private final ConcurrentMap<Integer, JobInfo> runningJobIdToInfos = Maps.newConcurrentMap();
 	private final ConcurrentMap<Integer, LinkedList<TaskID>> runningJobToTaskList = Maps.newConcurrentMap();
 	private final ConcurrentMap<TaskID, TaskInfo> runningTaskIdToInfos = Maps.newConcurrentMap();
@@ -50,15 +50,19 @@ public class StateManagerImpl extends AbstractComponent implements StateManager 
 	private final ConcurrentMap<Integer, JobInfo> timeoutJobIdToInfos = Maps.newConcurrentMap();
 	private final int keptHistoryJobMaxCount;
 	
-	public StateManagerImpl(ComponentManager manager) {
-		super(manager.getContext());
-		this.manager = manager;
-		jobPersistenceService = manager.getJobPersistenceService();
-		taskPersistenceService = this.manager.getTaskPersistenceService();
-		queueingManager = this.manager.getQueueingManager();
+	public StateManagerImpl(StorageService componentManager) {
+		super(componentManager.getContext());
+		this.componentManager = componentManager;
+		jobPersistenceService = componentManager.getJobPersistenceService();
+		taskPersistenceService = this.componentManager.getTaskPersistenceService();
 		
 		keptHistoryJobMaxCount = context.getInt(ConfigKeys.SCHEDULED_KEPT_HISTORY_JOB_MAX_COUNT, 200);
 		LOG.info("Configs: keptHistoryJobMaxCount=" + keptHistoryJobMaxCount);
+	}
+	
+	@Override
+	public void setQueueingManager(QueueingManager queueingManager) {
+		this.queueingManager = queueingManager;		
 	}
 	
 	@Override
@@ -222,6 +226,11 @@ public class StateManagerImpl extends AbstractComponent implements StateManager 
 	}
 	
 	@Override
+	public Optional<Job> retrieveJob(int jobId) {
+		return Optional.ofNullable(jobPersistenceService.retrieveJob(jobId));
+	}
+	
+	@Override
 	public List<Job> retrieveJobs(JobStatus jobStatus) {
 		return jobPersistenceService.getJobByState(jobStatus);
 	}
@@ -275,6 +284,11 @@ public class StateManagerImpl extends AbstractComponent implements StateManager 
 		taskPersistenceService.updateTaskByID(task);
 		LOG.info("In-db task state changed: jobId=" +
 				jobId + ", taskId=" + taskId + ", seqNo=" + seqNo + ", taskStatus=" + taskStatus);
+	}
+	
+	@Override
+	public void insertTasks(List<Task> tasks) {
+		taskPersistenceService.insertTasks(tasks);
 	}
 	
 	@Override
@@ -376,11 +390,6 @@ public class StateManagerImpl extends AbstractComponent implements StateManager 
 			return false;
 		}
 		return true;
-	}
-
-	@Override
-	public Optional<Job> retrieveJob(int jobId) {
-		return Optional.ofNullable(jobPersistenceService.retrieveJob(jobId));
 	}
 
 	@Override

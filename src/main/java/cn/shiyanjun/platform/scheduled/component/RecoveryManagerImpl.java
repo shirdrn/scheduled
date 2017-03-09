@@ -1,6 +1,5 @@
 package cn.shiyanjun.platform.scheduled.component;
 
-import java.sql.Timestamp;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -25,26 +24,24 @@ import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.constants.TaskStatus;
 import cn.shiyanjun.platform.api.utils.Time;
 import cn.shiyanjun.platform.scheduled.api.ComponentManager;
-import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
 import cn.shiyanjun.platform.scheduled.api.JobQueueingService;
 import cn.shiyanjun.platform.scheduled.api.QueueingManager;
 import cn.shiyanjun.platform.scheduled.api.RecoveryManager;
+import cn.shiyanjun.platform.scheduled.api.StateManager;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
-import cn.shiyanjun.platform.scheduled.dao.entities.Job;
 
 public class RecoveryManagerImpl implements RecoveryManager {
 
 	private static final Log LOG = LogFactory.getLog(RecoveryManagerImpl.class);
 	private final ComponentManager componentManager;
-	private final JobPersistenceService jobPersistenceService;
 	private final QueueingManager queueingManager;
 	private final BlockingQueue<JSONObject> needRecoveredTaskQueue = Queues.newLinkedBlockingQueue();
 	private final Map<Integer, JSONObject> processedPendingRecoveryJobs = Maps.newHashMap();
-
+	private StateManager stateManager;
+	
 	public RecoveryManagerImpl(ComponentManager componentManager) {
 		super();
 		this.componentManager = componentManager;
-		jobPersistenceService = componentManager.getJobPersistenceService();
 		queueingManager = componentManager.getQueueingManager();
 	}
 
@@ -52,6 +49,7 @@ public class RecoveryManagerImpl implements RecoveryManager {
 	public void start() {
 		try {
 			componentManager.getHeartbeatMQAccessService().start();
+			stateManager = componentManager.getStateManager();
 			
 			LOG.info("Start to read messages from MQ ...");
 			final Channel channel = componentManager.getHeartbeatMQAccessService().getChannel();
@@ -148,8 +146,7 @@ public class RecoveryManagerImpl implements RecoveryManager {
 					
 					if(!completedJobIds.contains(jobId)) {
 						// job status in db is in (FAILED, SUCCEED), discard task response message
-						Job job = jobPersistenceService.retrieveJob(jobId);
-						if(job != null) {
+						stateManager.retrieveJob(jobId).ifPresent(job -> {
 							if(job.getStatus() == JobStatus.SUCCEEDED.getCode() 
 									|| job.getStatus() == JobStatus.FAILED.getCode()) {
 								completedJobIds.add(jobId);
@@ -173,9 +170,7 @@ public class RecoveryManagerImpl implements RecoveryManager {
 									cachedTasks.get(taskId).add(taskResponse);
 								}
 							}
-						} else {
-							LOG.warn("Unknown job: jobId=" + jobId);
-						}
+						});
 					} else {
 						LOG.warn("Job already completed: taskResponse=" + taskResponse);
 					}
@@ -219,20 +214,10 @@ public class RecoveryManagerImpl implements RecoveryManager {
 	private void processCompletedJob(int jobId, JSONObject taskResponse, TaskStatus taskStatus) {
 		try {
 			JobStatus targetJobStatus = JobStatus.valueOf(taskStatus.name());
-			updateJobInfo(jobId, targetJobStatus);
+			stateManager.updateJobStatus(jobId, targetJobStatus);
 		} catch (Exception e) {
 			LOG.warn("Fail to update job: jobId=" + jobId + ", taskResponse=" + taskResponse, e);
 		}
 	}
 	
-	void updateJobInfo(int jobId, JobStatus jobStatus) {
-		Timestamp updateTime = new Timestamp(Time.now());
-		Job job = new Job();
-		job.setId(jobId);
-		job.setStatus(jobStatus.getCode());
-		job.setDoneTime(updateTime);
-		jobPersistenceService.updateJobByID(job);
-		LOG.info("In-db job state changed: jobId=" + jobId + ", updateTime=" + updateTime + ", jobStatus=" + jobStatus);
-	}
-
 }

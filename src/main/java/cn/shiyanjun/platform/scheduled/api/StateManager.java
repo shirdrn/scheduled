@@ -18,6 +18,8 @@ import cn.shiyanjun.platform.scheduled.dao.entities.Task;
 
 public interface StateManager {
 
+	void setQueueingManager(QueueingManager queueingManager);
+	
 	// for in-memory job
 	void registerRunningJob(TaskOrder taskOrder);
 	Optional<JobInfo> getRunningJob(int jobId);
@@ -43,6 +45,7 @@ public interface StateManager {
 	
 	// for in-DB task
 	void taskPublished(TaskID id) throws Exception;
+	void insertTasks(List<Task> tasks);
 	void updateTaskStatus(int taskId, TaskStatus taskStatus);
 	void updateTaskStatus(int taskId, TaskStatus taskStatus, long timestamp);
 	void updateTaskStatus(int taskId, TaskStatus taskStatus, Optional<Integer> resultCount);
