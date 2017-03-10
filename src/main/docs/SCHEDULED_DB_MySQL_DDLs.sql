@@ -15,7 +15,7 @@ CREATE TABLE `task` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `job_id` int(11) NOT NULL,
   `seq_no` int(11) NOT NULL,
-  `task_type` tinyint(4) NOT NULL DEFAULT '0' COMMENT '任务类型: 0-Unknown; 1-GreenPlum; 2-Spark; 3-JavaApp; 4-MapReduce; 5-Flink; 6-RestCallback; 7-RestPolling',
+  `task_type` tinyint(4) NOT NULL DEFAULT '0' COMMENT 'Task types: 0-Unknown; 1-GreenPlum; 2-Spark; 3-JavaApp; 4-MapReduce; 5-Flink; 6-RestCallback; 7-RestPolling',
   `params` text,
   `status` tinyint(4) NOT NULL DEFAULT '0' COMMENT 'Task statuses: 0-Created, 1-Queueing, 2-Scheduled, 3-Submitted, 4-Running, 5-Succeeded, 6-Failed, 7-Cancelled, 8-Timeout',
   `result_count` bigint(20) DEFAULT NULL,
