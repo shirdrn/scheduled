@@ -24,8 +24,6 @@ import cn.shiyanjun.platform.api.constants.JobStatus;
 import cn.shiyanjun.platform.api.constants.TaskStatus;
 import cn.shiyanjun.platform.api.utils.Time;
 import cn.shiyanjun.platform.scheduled.api.ComponentManager;
-import cn.shiyanjun.platform.scheduled.api.JobQueueingService;
-import cn.shiyanjun.platform.scheduled.api.QueueingManager;
 import cn.shiyanjun.platform.scheduled.api.RecoveryManager;
 import cn.shiyanjun.platform.scheduled.api.StateManager;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
@@ -34,7 +32,6 @@ public class RecoveryManagerImpl implements RecoveryManager {
 
 	private static final Log LOG = LogFactory.getLog(RecoveryManagerImpl.class);
 	private final ComponentManager componentManager;
-	private final QueueingManager queueingManager;
 	private final BlockingQueue<JSONObject> needRecoveredTaskQueue = Queues.newLinkedBlockingQueue();
 	private final Map<Integer, JSONObject> processedPendingRecoveryJobs = Maps.newHashMap();
 	private StateManager stateManager;
@@ -42,11 +39,10 @@ public class RecoveryManagerImpl implements RecoveryManager {
 	public RecoveryManagerImpl(ComponentManager componentManager) {
 		super();
 		this.componentManager = componentManager;
-		queueingManager = componentManager.getQueueingManager();
 	}
 
 	@Override
-	public void start() {
+	public void recover() {
 		try {
 			componentManager.getHeartbeatMQAccessService().start();
 			stateManager = componentManager.getStateManager();
@@ -100,12 +96,9 @@ public class RecoveryManagerImpl implements RecoveryManager {
 	// | Status transitions In Redis |
 	//     Job : QUEUEING -> SCHEDULED -> RUNNING -> SUCCEEDED/FAILED
 	//     Task: WAIT_TO_BE_SCHEDULED -> SCHEDULED -> RUNNING -> SUCCEEDED/FAILED
-	private void recoverRedisStates() {
-		queueingManager.queueNames().forEach(queue -> {
-			JobQueueingService qs = queueingManager.getQueueingContext(queue).getJobQueueingService();
-			Set<String> jobs = qs.getJobs();
-			jobs.forEach(strJob -> {
-				JSONObject job = JSONObject.parseObject(strJob);
+	private void recoverRedisStates() throws Exception {
+		stateManager.queueNames().forEach(queue -> {
+			stateManager.retrieveQueuedJobs(queue).forEach(job -> {
 				int jobId = job.getIntValue(ScheduledConstants.JOB_ID);
 				String strJobStatus = job.getString(ScheduledConstants.JOB_STATUS);
 				JobStatus jobStatus = JobStatus.valueOf(strJobStatus);
@@ -113,22 +106,21 @@ public class RecoveryManagerImpl implements RecoveryManager {
 					job.put(ScheduledConstants.JOB_STATUS, JobStatus.QUEUEING.toString());
 					job.put(ScheduledConstants.LAST_UPDATE_TS, Time.now());
 					job.put(ScheduledConstants.TASK_STATUS, TaskStatus.CREATED.toString());
-					qs.updateQueuedJob(jobId, job);
+					try {
+						stateManager.updateQueuedJob(jobId, queue, job);
+					} catch (Exception e) {
+						Throwables.propagate(e);
+					}
 					LOG.info("Job in Redis recovered: " + job);
 				} else if(jobStatus == JobStatus.RUNNING 
 						|| jobStatus == JobStatus.SUCCEEDED || jobStatus == JobStatus.FAILED) {
-					qs.remove(String.valueOf(jobId));
+					stateManager.removeQueuedJob(queue, jobId);
 					LOG.info("Job in Redis removed: " + job);
 				}
 			});
 		});
 	}
 
-	@Override
-	public void stop() {
-		
-	}
-	
 	private void processPendingTaskResponses() {
 		Set<Integer> completedJobIds = Sets.newHashSet();
 		// Map<jobId, Map<taskId, List<JSONObject>>>

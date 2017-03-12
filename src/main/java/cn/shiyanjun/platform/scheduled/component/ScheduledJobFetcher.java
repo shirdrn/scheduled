@@ -21,6 +21,7 @@ import cn.shiyanjun.platform.api.utils.Time;
 import cn.shiyanjun.platform.scheduled.api.ComponentManager;
 import cn.shiyanjun.platform.scheduled.api.JobFetcher;
 import cn.shiyanjun.platform.scheduled.api.Protocol;
+import cn.shiyanjun.platform.scheduled.api.ScheduledController;
 import cn.shiyanjun.platform.scheduled.api.StateManager;
 import cn.shiyanjun.platform.scheduled.common.RESTRequest;
 import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
@@ -42,6 +43,7 @@ public class ScheduledJobFetcher implements JobFetcher {
 	private final Context context;
 	private ScheduledExecutorService fetchJobPool;
 	private StateManager stateManager;
+	private ScheduledController scheduledController;
 	private final int fetchJobInterval;
 	private JobFetchProtocolManager jobFetchProtocolManager;
 	private JobOrchestrationProtocolManager jobOrchestrationProtocolManager;
@@ -64,6 +66,7 @@ public class ScheduledJobFetcher implements JobFetcher {
 
 	@Override
 	public void start() {
+		scheduledController = componentManager.getScheduledController();
 		stateManager = componentManager.getStateManager();
 		jobOrchestrationProtocolManager = new JobOrchestrationProtocolManager(context);
 		jobOrchestrationProtocolManager.initialize();
@@ -126,7 +129,7 @@ public class ScheduledJobFetcher implements JobFetcher {
 		}
 		
 		private boolean shouldTryToFetch() {
-			if(componentManager.isSchedulingOpened()) {
+			if(scheduledController.isSchedulingOpened()) {
 				String start = maintenanceSegmentStartTime.replaceAll(":", "");
 				String end = maintenanceSegmentEndTime.replaceAll(":", "");
 				String current = Time.formatCurrentHourTime().replaceAll(":", "");
@@ -155,8 +158,8 @@ public class ScheduledJobFetcher implements JobFetcher {
 				final Integer jobId;
 				try{
 					jobId = job.getId();
-					if(componentManager.shouldCancelJob(jobId)) {
-						componentManager.jobCancelled(jobId, () -> {
+					if(scheduledController.shouldCancelJob(jobId)) {
+						scheduledController.jobCancelled(jobId, () -> {
 							stateManager.updateJobStatus(jobId, JobStatus.CANCELLED);
 						});
 					} else {

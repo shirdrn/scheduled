@@ -14,6 +14,7 @@ import org.apache.commons.logging.LogFactory;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.google.common.base.Throwables;
 import com.google.common.collect.Queues;
 import com.rabbitmq.client.AMQP.BasicProperties;
 import com.rabbitmq.client.Channel;
@@ -28,8 +29,10 @@ import cn.shiyanjun.platform.api.utils.Time;
 import cn.shiyanjun.platform.scheduled.api.ComponentManager;
 import cn.shiyanjun.platform.scheduled.api.HeartbeatHandlingController;
 import cn.shiyanjun.platform.scheduled.api.MQAccessService;
+import cn.shiyanjun.platform.scheduled.api.RecoveryManager;
 import cn.shiyanjun.platform.scheduled.api.ResourceManager;
 import cn.shiyanjun.platform.scheduled.api.ResponseHandler;
+import cn.shiyanjun.platform.scheduled.api.ScheduledController;
 import cn.shiyanjun.platform.scheduled.api.SchedulingManager;
 import cn.shiyanjun.platform.scheduled.api.SchedulingPolicy;
 import cn.shiyanjun.platform.scheduled.api.StateManager;
@@ -65,12 +68,14 @@ public class SchedulingManagerImpl implements SchedulingManager {
 	private final MQAccessService heartbeatMQAccessService;
 	private volatile boolean running = true;
 	private SchedulingPolicy schedulingPolicy;
+	private RecoveryManager recoveryManager;
 	private final ResourceManager resourceManager;
 	private final FreshTasksResponseProcessingManager freshTasksResponseProcessingManager;
 	private final BlockingQueue<Heartbeat> rawHeartbeatMessages = Queues.newLinkedBlockingQueue();
 	private final StaleJobChecker staleJobChecker;
 	private StateManager stateManager;
 	private HeartbeatHandlingController taskResponseHandlingController;
+	private ScheduledController scheduledController;
 
 	public SchedulingManagerImpl(ComponentManager componentManager) {
 		super();
@@ -79,6 +84,7 @@ public class SchedulingManagerImpl implements SchedulingManager {
 		heartbeatMQAccessService = this.componentManager.getHeartbeatMQAccessService();
 		resourceManager = this.componentManager.getResourceManager();
 		freshTasksResponseProcessingManager = new FreshTasksResponseProcessingManager();
+		recoveryManager = new RecoveryManagerImpl(componentManager);
 		staleJobChecker = new StaleJobChecker(this);
 	}
 	
@@ -87,8 +93,15 @@ public class SchedulingManagerImpl implements SchedulingManager {
 		schedulingPolicy = new MaxConcurrencySchedulingPolicy(componentManager);
 		stateManager = componentManager.getStateManager();
 		taskResponseHandlingController = new SimpleTaskResponseHandlingController(componentManager);
+		scheduledController = componentManager.getScheduledController();
 		
 		// recover task responses
+		try {
+			recoveryManager.recover();
+		} catch (Exception e) {
+			LOG.fatal("Fail to recover:", e);
+			Throwables.propagate(e);
+		}
 		taskResponseHandlingController.recoverTasks();
 		
 		heartbeatMQAccessService.start();
@@ -141,9 +154,9 @@ public class SchedulingManagerImpl implements SchedulingManager {
 						int taskId = taskOrder.getTask().getId();
 						int seqNo = taskOrder.getTask().getSeqNo();
 						
-						if(componentManager.shouldCancelJob(jobId)) {
+						if(scheduledController.shouldCancelJob(jobId)) {
 							// cancel a running job
-							componentManager.jobCancelled(jobId, () -> {
+							scheduledController.jobCancelled(jobId, () -> {
 								try {
 									stateManager.updateJobStatus(jobId, JobStatus.CANCELLED);
 									stateManager.removeQueuedJob(queue, jobId);
@@ -416,7 +429,7 @@ public class SchedulingManagerImpl implements SchedulingManager {
 		
 		TaskStatus status = taskStatus;
 		JobStatus jobStatus = jobInfo.getJobStatus();
-		if(componentManager.shouldCancelJob(jobId)) {
+		if(scheduledController.shouldCancelJob(jobId)) {
 			status = TaskStatus.CANCELLED;
 			jobStatus = JobStatus.CANCELLED;
 		}
@@ -430,7 +443,7 @@ public class SchedulingManagerImpl implements SchedulingManager {
 			
 			jobInfo.setLastUpdatedTime(Time.now());
 			jobInfo.setJobStatus(jobStatus);
-			logInMemoryJobStateChanged(jobInfo);
+			LOG.info("In-memory job state changed: job=" + jobInfo);
 		} else {
 			// non-last task
 			JSONObject queuedJob = stateManager.retrieveQueuedJob(queue, jobId);
@@ -460,8 +473,8 @@ public class SchedulingManagerImpl implements SchedulingManager {
 			}
 		}
 		
-		if(componentManager.shouldCancelJob(jobId)) {
-			componentManager.jobCancelled(jobId, () -> {
+		if(scheduledController.shouldCancelJob(jobId)) {
+			scheduledController.jobCancelled(jobId, () -> {
 				// do nothing
 			}); 
 		}
@@ -495,10 +508,6 @@ public class SchedulingManagerImpl implements SchedulingManager {
 
 	private void logInMemoryStateChanges(final JobInfo jobInfo, final TaskInfo taskInfo) {
 		LOG.info("In-memory state changed: job=" + jobInfo + ", task=" + taskInfo); 
-	}
-	
-	private void logInMemoryJobStateChanged(final JobInfo jobInfo) {
-		LOG.info("In-memory job state changed: job=" + jobInfo);
 	}
 	
 	void releaseResource(String queue, TaskID id) {
@@ -575,37 +584,14 @@ public class SchedulingManagerImpl implements SchedulingManager {
 	}
 	
 	@Override
-	public boolean cancelJobInternal(int jobId) {
-		return componentManager.cancelJob(jobId, () -> {
-			try {
-				stateManager.getRunningJob(jobId).ifPresent(ji -> {
-					ji.setJobStatus(JobStatus.CANCELLING);
-					ji.setLastUpdatedTime(Time.now());
-					logInMemoryJobStateChanged(ji);
-					
-					// update Redis job status to CANCELLING
-					String queue = ji.getQueue();
-					JSONObject job = stateManager.retrieveQueuedJob(queue, jobId);
-					job.put(ScheduledConstants.JOB_STATUS, JobStatus.CANCELLING.toString());
-					job.put(ScheduledConstants.LAST_UPDATE_TS, Time.now());
-					try {
-						stateManager.updateQueuedJob(jobId, queue, job);
-					} catch (Exception e) {
-						LOG.warn("Failed to update queued job: " + job);
-					}
-				});
-				// update DB
-				stateManager.updateJobStatus(jobId, JobStatus.CANCELLING);
-			} catch (Exception e) {
-				LOG.warn("Fail to cancel job: ", e);
-			}
-		});
-	}
-	
-	@Override
 	public ComponentManager getComponentManager() {
 		return componentManager;
 	}
+	
+	@Override
+	public RecoveryManager getRecoveryManager() {
+		return recoveryManager;
+	};
 
 	FreshTasksResponseProcessingManager getFreshTasksResponseProcessingManager() {
 		return freshTasksResponseProcessingManager;

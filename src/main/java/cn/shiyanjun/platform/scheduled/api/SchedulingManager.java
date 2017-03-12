@@ -5,5 +5,5 @@ import cn.shiyanjun.platform.api.LifecycleAware;
 public interface SchedulingManager extends LifecycleAware {
 
 	ComponentManager getComponentManager();
-	boolean cancelJobInternal(int jobId);
+	RecoveryManager getRecoveryManager();
 }

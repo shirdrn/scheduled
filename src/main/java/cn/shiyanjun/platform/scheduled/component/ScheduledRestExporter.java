@@ -88,7 +88,7 @@ public class ScheduledRestExporter implements RestExporter {
 	@Override
 	public boolean cancelJob(int jobId) {
 		try {
-			return componentManager.cancelJob(jobId);
+			return componentManager.getScheduledController().cancelJob(jobId);
 		} catch (Exception e) {
 			return false;
 		}
@@ -101,12 +101,12 @@ public class ScheduledRestExporter implements RestExporter {
 
 	@Override
 	public void setSchedulingOpened(boolean isSchedulingOpened) {
-		componentManager.setSchedulingOpened(isSchedulingOpened);;
+		componentManager.getScheduledController().setSchedulingOpened(isSchedulingOpened);;
 	}
 
 	@Override
 	public boolean isSchedulingOpened() {
-		return componentManager.isSchedulingOpened();
+		return componentManager.getScheduledController().isSchedulingOpened();
 	}
 
 	@Override

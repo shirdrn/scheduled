@@ -115,7 +115,7 @@ public class QueueingManagerImpl extends AbstractComponent implements QueueingMa
 				JSONObject job = null;
 				try {
 					// control to take a job from the queue
-					if(componentManager.isSchedulingOpened()) {
+					if(componentManager.getScheduledController().isSchedulingOpened()) {
 						job = queueingQueue.take();
 						if(job != null) {
 							int jobId = job.getIntValue(ScheduledConstants.JOB_ID);

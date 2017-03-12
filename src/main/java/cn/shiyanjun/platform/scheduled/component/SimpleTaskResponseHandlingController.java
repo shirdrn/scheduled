@@ -61,8 +61,8 @@ public final class SimpleTaskResponseHandlingController implements HeartbeatHand
 	
 	@Override
 	public void recoverTasks() {
+		Map<Integer, JSONObject> jobs = sched.getRecoveryManager().getPendingTaskResponses();
 		if(isRecoveryFeatureEnabled) {
-			Map<Integer, JSONObject> jobs = componentManager.getRecoveryManager().getPendingTaskResponses();
 			jobs.keySet().forEach(jobId -> {
 				LOG.info("Start to recover task...");
 				JSONObject taskResponse = null;
@@ -76,7 +76,6 @@ public final class SimpleTaskResponseHandlingController implements HeartbeatHand
 				LOG.info("Complete to recover tasks.");
 			});
 		} else {
-			Map<Integer, JSONObject> jobs = componentManager.getRecoveryManager().getPendingTaskResponses();
 			jobs.keySet().forEach(jobId -> {
 				JSONObject taskResponse = null;
 				try {

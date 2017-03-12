@@ -4,10 +4,9 @@ import java.util.Map;
 
 import com.alibaba.fastjson.JSONObject;
 
-import cn.shiyanjun.platform.api.LifecycleAware;
+public interface RecoveryManager {
 
-public interface RecoveryManager extends LifecycleAware {
-
+	void recover() throws Exception;
 	Map<Integer, JSONObject> getPendingTaskResponses();
 	
 }

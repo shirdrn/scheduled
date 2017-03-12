@@ -2,7 +2,6 @@ package cn.shiyanjun.platform.scheduled;
 
 import java.util.Iterator;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -11,7 +10,6 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.ibatis.session.SqlSessionFactory;
 
 import com.google.common.base.Strings;
-import com.google.common.collect.Sets;
 import com.rabbitmq.client.ConnectionFactory;
 
 import cn.shiyanjun.platform.api.Context;
@@ -26,10 +24,10 @@ import cn.shiyanjun.platform.scheduled.api.JobFetcher;
 import cn.shiyanjun.platform.scheduled.api.JobPersistenceService;
 import cn.shiyanjun.platform.scheduled.api.MQAccessService;
 import cn.shiyanjun.platform.scheduled.api.QueueingManager;
-import cn.shiyanjun.platform.scheduled.api.RecoveryManager;
 import cn.shiyanjun.platform.scheduled.api.ResourceManager;
 import cn.shiyanjun.platform.scheduled.api.RestExporter;
 import cn.shiyanjun.platform.scheduled.api.RestServer;
+import cn.shiyanjun.platform.scheduled.api.ScheduledController;
 import cn.shiyanjun.platform.scheduled.api.SchedulingManager;
 import cn.shiyanjun.platform.scheduled.api.StateManager;
 import cn.shiyanjun.platform.scheduled.api.StorageService;
@@ -37,8 +35,8 @@ import cn.shiyanjun.platform.scheduled.api.TaskPersistenceService;
 import cn.shiyanjun.platform.scheduled.component.JobPersistenceServiceImpl;
 import cn.shiyanjun.platform.scheduled.component.QueueingManagerImpl;
 import cn.shiyanjun.platform.scheduled.component.RabbitMQAccessService;
-import cn.shiyanjun.platform.scheduled.component.RecoveryManagerImpl;
 import cn.shiyanjun.platform.scheduled.component.ResourceManagerImpl;
+import cn.shiyanjun.platform.scheduled.component.ScheduledControllerImpl;
 import cn.shiyanjun.platform.scheduled.component.ScheduledJobFetcher;
 import cn.shiyanjun.platform.scheduled.component.ScheduledRestExporter;
 import cn.shiyanjun.platform.scheduled.component.ScheduledRestServer;
@@ -65,7 +63,6 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	private final String rabbitmqConfig = "rabbitmq.properties";
 	private final String platformId;
 	private JobFetcher jobFetcher;
-	private RecoveryManager recoveryManager;
 	private QueueingManager queueingManager;
 	private SchedulingManager schedulingManager;
 	private JobPersistenceService jobPersistenceService;
@@ -76,9 +73,7 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	private RestExporter restManageable;
 	private RestServer restServer;
 	private StateManager stateManager;
-	
-	private static final Set<Integer> cancellingJobs = Sets.newConcurrentHashSet();
-	protected volatile boolean isSchedulingOpened = true;
+	private ScheduledController scheduledController;
 	
 	public ScheduledMain(final Context context) {
 		super(context);
@@ -115,23 +110,19 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 			
 			jobFetcher = new ScheduledJobFetcher(this);
 			schedulingManager = new SchedulingManagerImpl(this);
-			recoveryManager = new RecoveryManagerImpl(this);
 			restManageable = new ScheduledRestExporter(this);
 			configureRestServer();
+			
+			scheduledController = new ScheduledControllerImpl(this);
 
 			// map job types to Redis queue names
 			parseRedisQueueRelatedConfigs();
 					
-			taskMQAccessService.start();
-			recoveryManager.start();
-			
-			jobFetcher.start();
-			schedulingManager.start();
-			queueingManager.start();
-			
 			// add shutdown hook for releasing port resource
 			HookUtils.addShutdownHook(() -> restServer.stop());
-			restServer.start();
+			
+			ComponentUtils.startAll(taskMQAccessService, 
+					jobFetcher, schedulingManager, queueingManager, restServer);
 		} catch (Exception e) {
 			LOG.error(e);
 			stop();
@@ -159,7 +150,7 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 				String[] values = value.split("\\|");
 				String jobConfig = values[0].split(":")[1];
 				String taskConfig = values[1];
-				String capacity = values[3];
+				String capacity = values[2];
 				int[] jobTypes = ConfigUtils.stringsToInts(jobConfig.split(","));
 				queueingManager.registerQueue(queue, jobTypes);
 				List<Pair<TaskType, Integer>> taskTypes = ConfigUtils.parsePairStrings(taskConfig).stream()
@@ -175,7 +166,7 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	public void stop() {
 		try {
 			ComponentUtils.stopAllQuietly(
-					schedulingManager, recoveryManager, jobFetcher, queueingManager, 
+					schedulingManager, jobFetcher, queueingManager, 
 					taskMQAccessService, heartbeatMQAccessService, restServer);
 			ResourceUtils.closeAll();
 		} catch (Exception e) {}
@@ -227,39 +218,8 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	}
 	
 	@Override
-	public RecoveryManager getRecoveryManager() {
-		return recoveryManager;
-	}
-	
-	@Override
 	public JobFetcher getJobFetcher() {
 		return jobFetcher;
-	}
-	
-	@Override
-	public boolean cancelJob(int jobId) {
-		LOG.info("Prepare to cancel job: jobId=" + jobId);
-		cancellingJobs.add(jobId);
-		return schedulingManager.cancelJobInternal(jobId);
-	}
-	
-	@Override
-	public boolean cancelJob(int jobId, Runnable action) {
-		LOG.info("Prepare to cancel job: jobId=" + jobId);
-		action.run();
-		return cancellingJobs.add(jobId);
-	}
-
-	@Override
-	public boolean shouldCancelJob(int jobId) {
-		return cancellingJobs.contains(jobId);
-	}
-
-	@Override
-	public void jobCancelled(int jobId, Runnable action) {
-		action.run();
-		cancellingJobs.remove(jobId);
-		LOG.info("Job cancelled: jobId=" + jobId);
 	}
 	
 	@Override
@@ -268,13 +228,8 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 	}
 	
 	@Override
-	public boolean isSchedulingOpened() {
-		return isSchedulingOpened;
-	}
-
-	@Override
-	public void setSchedulingOpened(boolean isSchedulingOpened) {
-		this.isSchedulingOpened = isSchedulingOpened;
+	public ScheduledController getScheduledController() {
+		return scheduledController;
 	}
 	
 	public static void main(String[] args) {

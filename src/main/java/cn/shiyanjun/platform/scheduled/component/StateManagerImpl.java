@@ -42,7 +42,7 @@ public class StateManagerImpl extends AbstractComponent implements StateManager 
 	private final JobPersistenceService jobPersistenceService;
 	private final TaskPersistenceService taskPersistenceService;
 	private QueueingManager queueingManager;
-	private final StorageService componentManager;
+	private final StorageService storageService;
 	private final ConcurrentMap<Integer, JobInfo> runningJobIdToInfos = Maps.newConcurrentMap();
 	private final ConcurrentMap<Integer, LinkedList<TaskID>> runningJobToTaskList = Maps.newConcurrentMap();
 	private final ConcurrentMap<TaskID, TaskInfo> runningTaskIdToInfos = Maps.newConcurrentMap();
@@ -50,11 +50,11 @@ public class StateManagerImpl extends AbstractComponent implements StateManager 
 	private final ConcurrentMap<Integer, JobInfo> timeoutJobIdToInfos = Maps.newConcurrentMap();
 	private final int keptHistoryJobMaxCount;
 	
-	public StateManagerImpl(StorageService componentManager) {
-		super(componentManager.getContext());
-		this.componentManager = componentManager;
-		jobPersistenceService = componentManager.getJobPersistenceService();
-		taskPersistenceService = this.componentManager.getTaskPersistenceService();
+	public StateManagerImpl(StorageService storageService) {
+		super(storageService.getContext());
+		this.storageService = storageService;
+		jobPersistenceService = storageService.getJobPersistenceService();
+		taskPersistenceService = this.storageService.getTaskPersistenceService();
 		
 		keptHistoryJobMaxCount = context.getInt(ConfigKeys.SCHEDULED_KEPT_HISTORY_JOB_MAX_COUNT, 200);
 		LOG.info("Configs: keptHistoryJobMaxCount=" + keptHistoryJobMaxCount);
