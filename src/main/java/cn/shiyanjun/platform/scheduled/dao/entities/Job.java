@@ -4,10 +4,7 @@ import java.io.Serializable;
 import java.sql.Timestamp;
 import java.util.List;
 
-import org.apache.ibatis.type.Alias;
-
 @SuppressWarnings("serial")
-@Alias("Job")
 public class Job implements Serializable {
 	
     private Integer id;

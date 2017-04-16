@@ -135,7 +135,7 @@ public class SchedulingManagerImpl implements SchedulingManager {
 	 */
 	private class SchedulingThread extends Thread {
 		
-		private final int scheduleTaskIntervalMillis = 5000;
+		private final int scheduleTaskIntervalMillis = 1000;
 		
 		public SchedulingThread() {
 			super();

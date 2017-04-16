@@ -3,10 +3,7 @@ package cn.shiyanjun.platform.scheduled.dao.entities;
 import java.io.Serializable;
 import java.sql.Timestamp;
 
-import org.apache.ibatis.type.Alias;
-
 @SuppressWarnings("serial")
-@Alias("Task")
 public class Task implements Serializable {
 	
     private Integer id;
