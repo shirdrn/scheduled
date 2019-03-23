@@ -99,7 +99,8 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 
 			String taskQName = context.get(ConfigKeys.SCHEDULED_MQ_TASK_QUEUE_NAME);
 			String hbQName = context.get(ConfigKeys.SCHEDULED_MQ_HEARTBEAT_QUEUE_NAME);
-			final ConnectionFactory connectionFactory = ResourceUtils.registerAndGetResource(rabbitmqConfig, ConnectionFactory.class);
+			final ConnectionFactory connectionFactory =
+					ResourceUtils.registerAndGetResource(rabbitmqConfig, ConnectionFactory.class);
 			taskMQAccessService = new RabbitMQAccessService(taskQName, connectionFactory);
 			heartbeatMQAccessService = new RabbitMQAccessService(hbQName, connectionFactory);
 			
@@ -154,7 +155,7 @@ public final class ScheduledMain extends AbstractComponent implements LifecycleA
 				int[] jobTypes = ConfigUtils.stringsToInts(jobConfig.split(","));
 				queueingManager.registerQueue(queue, jobTypes);
 				List<Pair<TaskType, Integer>> taskTypes = ConfigUtils.parsePairStrings(taskConfig).stream()
-						.map(p -> new Pair<TaskType, Integer>(TaskType.fromCode(p.getKey()).get(), p.getValue()))
+						.map(p -> new Pair<>(TaskType.fromCode(p.getKey()).get(), p.getValue()))
 						.collect(Collectors.toList());
 				resourceManager.registerResource(queue, taskTypes);
 				resourceManager.registerQueueCapacity(queue, Integer.parseInt(capacity));

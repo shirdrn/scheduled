@@ -24,7 +24,7 @@ import cn.shiyanjun.platform.scheduled.constants.ConfigKeys;
 import cn.shiyanjun.platform.scheduled.constants.ScheduledConstants;
 import cn.shiyanjun.platform.scheduled.constants.QueueSelectorType;
 import cn.shiyanjun.platform.scheduled.dao.entities.Task;
-import cn.shiyanjun.platform.scheduled.utils.ScheuledUtils;
+import cn.shiyanjun.platform.scheduled.utils.ScheduledUtils;
 
 /**
  * Offer a task to be scheduled based on the maximum concurrency policy, if the resources 
@@ -46,12 +46,14 @@ public class MaxConcurrencySchedulingPolicy implements SchedulingPolicy {
 		stateManager = componentManager.getStateManager();
         resourceManager = componentManager.getResourceManager();
         
-		String type = componentManager.getContext().get(ConfigKeys.SCHEDULED_QUEUEING_SELECTOR_NAME, QueueSelectorType.RAMDOM.name());
+		String type = componentManager.getContext().get(
+				ConfigKeys.SCHEDULED_QUEUEING_SELECTOR_NAME,
+				QueueSelectorType.RAMDOM.name());
 		QueueSelectorType selectorType = QueueSelectorType.RAMDOM;
 		try {
 			selectorType = QueueSelectorType.valueOf(type);
 		} catch (Exception e) {}
-		Optional<QueueSelector> qs = ScheuledUtils.getQueueSelector(selectorType);
+		Optional<QueueSelector> qs = ScheduledUtils.getQueueSelector(selectorType);
 		if(!qs.isPresent()) {
 			Preconditions.checkArgument(qs.isPresent(), "queueSelector==null");
 		} else {

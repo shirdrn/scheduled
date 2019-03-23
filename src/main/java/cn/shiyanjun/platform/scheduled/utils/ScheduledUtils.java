@@ -15,7 +15,7 @@ import cn.shiyanjun.platform.scheduled.api.QueueSelector;
 import cn.shiyanjun.platform.scheduled.api.ResourceManager;
 import cn.shiyanjun.platform.scheduled.constants.QueueSelectorType;
 
-public class ScheuledUtils {
+public class ScheduledUtils {
 
 	private static final Map<QueueSelectorType, QueueSelector> selectors = Maps.newHashMap();
 	static {

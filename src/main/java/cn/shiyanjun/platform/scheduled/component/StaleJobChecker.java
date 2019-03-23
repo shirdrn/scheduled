@@ -19,7 +19,7 @@ import cn.shiyanjun.platform.scheduled.dao.entities.Job;
 import cn.shiyanjun.platform.scheduled.dao.entities.Task;
 
 /**
- * Check jobs whose status are deem to be not updated for a specified time,
+ * Check jobs whose statuses are deemed to be not updated for a specified time,
  * and decide to clear the tasks' in-redis or in-memory statuses.
  * 
  * @author yanjun
@@ -36,9 +36,11 @@ class StaleJobChecker implements Runnable {
 	public StaleJobChecker(final SchedulingManagerImpl schedulingManager) {
 		this.sched = schedulingManager;
 		this.stateManager = schedulingManager.getComponentManager().getStateManager();
-		keptTimeoutJobMaxCount = schedulingManager.componentManager.getContext().getInt(ConfigKeys.SCHEDULED_KEPT_TIMEOUT_JOB_MAX_COUNT, 100);
+		keptTimeoutJobMaxCount = schedulingManager.componentManager
+				.getContext().getInt(ConfigKeys.SCHEDULED_KEPT_TIMEOUT_JOB_MAX_COUNT, 100);
 		// default 2 hours
-		staleJobMaxThresholdSecs = schedulingManager.componentManager.getContext().getInt(ConfigKeys.SCHEDULED_STALE_JOB_MAX_THRESHOLD_SECS, 7200);
+		staleJobMaxThresholdSecs = schedulingManager.componentManager
+				.getContext().getInt(ConfigKeys.SCHEDULED_STALE_JOB_MAX_THRESHOLD_SECS, 7200);
 		staleJobMaxThresholdMillis = staleJobMaxThresholdSecs * 1000;
 	}
 	
